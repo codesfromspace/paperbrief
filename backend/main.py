@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import tempfile
 import uuid
 from typing import Any
@@ -243,7 +244,101 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def extract_pdf_text(pdf_bytes: bytes) -> dict[str, Any]:
+def clean_pdf_line(line: str) -> str:
+    clean = re.sub(r"\s+", " ", line).strip()
+    return clean.strip(" -•·")
+
+
+def looks_like_internal_title(title: str, filename: str) -> bool:
+    value = clean_pdf_line(title).lower()
+    if not value:
+        return True
+    file_stem = os.path.splitext(os.path.basename(filename))[0].lower()
+    if value == file_stem or value in file_stem or file_stem in value:
+        return True
+    return bool(re.search(r"[_/\\]|\.pdf$|\+\+|\.{2,}|\b\d+\.\.\d+\b", value))
+
+
+def infer_article_title(first_page_text: str, pdf_title: str, filename: str) -> str:
+    if pdf_title and not looks_like_internal_title(pdf_title, filename):
+        return clean_pdf_line(pdf_title)
+
+    stop_markers = {
+        "abstract",
+        "keywords",
+        "introduction",
+        "references",
+        "methods",
+        "materials and methods",
+    }
+    noise_patterns = [
+        r"^research article$",
+        r"^original article$",
+        r"^review article$",
+        r"^open access$",
+        r"^article$",
+        r"^translational neuroscience$",
+        r"^de gruyter$",
+        r"^received\b",
+        r"^accepted\b",
+        r"^published\b",
+        r"^correspond",
+        r"^copyright\b",
+        r"^doi\b",
+        r"^https?://",
+        r"@",
+    ]
+
+    lines: list[str] = []
+    for raw_line in first_page_text.splitlines():
+        line = clean_pdf_line(raw_line)
+        if not line:
+            continue
+        lowered = line.lower().rstrip(":")
+        if lowered in stop_markers:
+            break
+        if any(re.search(pattern, lowered) for pattern in noise_patterns):
+            continue
+        if re.search(r"\b\d{4}\b", lowered) and len(line.split()) <= 5:
+            continue
+        lines.append(line)
+        if len(lines) >= 40:
+            break
+
+    candidates: list[tuple[int, str]] = []
+    for start in range(len(lines)):
+        for length in range(1, 4):
+            chunk = lines[start:start + length]
+            if len(chunk) != length:
+                continue
+            candidate = clean_pdf_line(" ".join(chunk))
+            words = candidate.split()
+            if not 5 <= len(words) <= 28:
+                continue
+            lowered = candidate.lower()
+            if looks_like_internal_title(candidate, filename):
+                continue
+            if lowered.count(",") >= 3:
+                continue
+            if re.search(r"\b(university|department|faculty|institute|hospital|clinic)\b", lowered):
+                continue
+            if re.search(r"\b(author|license|creative commons|citation)\b", lowered):
+                continue
+
+            score = 100 - abs(14 - len(words)) * 2 - start
+            if any(char in candidate for char in [":", "?", "-"]):
+                score += 4
+            if candidate.endswith("."):
+                score -= 8
+            candidates.append((score, candidate.rstrip(".")))
+
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
+
+    return clean_pdf_line(pdf_title) if pdf_title else ""
+
+
+def extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> dict[str, Any]:
     try:
         document = fitz.open(stream=pdf_bytes, filetype="pdf")
     except Exception as exc:
@@ -255,9 +350,13 @@ def extract_pdf_text(pdf_bytes: bytes) -> dict[str, Any]:
         pages.append({"page": page_index, "text": text})
 
     raw_text = "\n\n".join(f"[PAGE {page['page']}]\n{page['text']}" for page in pages if page["text"])
+    pdf_metadata = document.metadata or {}
+    pdf_title = pdf_metadata.get("title") or ""
+    first_page_text = pages[0]["text"] if pages else ""
     metadata = {
-        "title": (document.metadata or {}).get("title") or "",
-        "author": (document.metadata or {}).get("author") or "",
+        "title": infer_article_title(first_page_text, pdf_title, filename),
+        "pdf_metadata_title": pdf_title,
+        "author": pdf_metadata.get("author") or "",
         "page_count": document.page_count,
         "char_count": len(raw_text),
     }
@@ -493,7 +592,7 @@ async def generate_claims(
         raise HTTPException(status_code=400, detail="Upload a PDF file.")
 
     pdf_bytes = await pdf.read()
-    parsed = extract_pdf_text(pdf_bytes)
+    parsed = extract_pdf_text(pdf_bytes, pdf.filename)
     user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
     claims = call_openai(key, model, user_input)
 
@@ -521,7 +620,7 @@ async def generate_batch(
     for pdf in pdfs:
         if not pdf.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF.")
-        parsed = extract_pdf_text(await pdf.read())
+        parsed = extract_pdf_text(await pdf.read(), pdf.filename)
         user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
         claims = call_openai(key, model, user_input)
         papers.append({
