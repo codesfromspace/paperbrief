@@ -254,23 +254,13 @@ def looks_like_internal_title(title: str, filename: str) -> bool:
     if not value:
         return True
     file_stem = os.path.splitext(os.path.basename(filename))[0].lower()
-    if value == file_stem or value in file_stem or file_stem in value:
+    if value == file_stem or file_stem in value:
         return True
     return bool(re.search(r"[_/\\]|\.pdf$|\+\+|\.{2,}|\b\d+\.\.\d+\b", value))
 
 
-def infer_article_title(first_page_text: str, pdf_title: str, filename: str) -> str:
-    if pdf_title and not looks_like_internal_title(pdf_title, filename):
-        return clean_pdf_line(pdf_title)
-
-    stop_markers = {
-        "abstract",
-        "keywords",
-        "introduction",
-        "references",
-        "methods",
-        "materials and methods",
-    }
+def title_candidate_is_noise(candidate: str, filename: str) -> bool:
+    lowered = candidate.lower().rstrip(":")
     noise_patterns = [
         r"^research article$",
         r"^original article$",
@@ -288,7 +278,67 @@ def infer_article_title(first_page_text: str, pdf_title: str, filename: str) -> 
         r"^https?://",
         r"@",
     ]
+    if looks_like_internal_title(candidate, filename):
+        return True
+    if any(re.search(pattern, lowered) for pattern in noise_patterns):
+        return True
+    if re.search(r"\b(university|department|faculty|institute|hospital|clinic)\b", lowered):
+        return True
+    if re.search(r"\b(author|license|creative commons|citation)\b", lowered):
+        return True
+    if lowered.count(",") >= 3:
+        return True
+    return False
 
+
+def infer_layout_title(first_page: fitz.Page, filename: str) -> str:
+    page_dict = first_page.get_text("dict")
+    lines: list[dict[str, Any]] = []
+    for block in page_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            spans = [span for span in line.get("spans", []) if span.get("text", "").strip()]
+            text = clean_pdf_line(" ".join(span["text"] for span in spans))
+            if not text or title_candidate_is_noise(text, filename):
+                continue
+            words = text.split()
+            if len(words) > 18:
+                continue
+            max_size = max(float(span.get("size", 0)) for span in spans)
+            y0 = float(line.get("bbox", [0, 9999, 0, 9999])[1])
+            x0 = float(line.get("bbox", [9999, 0, 9999, 0])[0])
+            if y0 > first_page.rect.height * 0.45:
+                continue
+            lines.append({"text": text, "size": max_size, "y": y0, "x": x0})
+
+    if not lines:
+        return ""
+
+    max_size = max(line["size"] for line in lines)
+    title_lines = [
+        line for line in lines
+        if line["size"] >= max_size - 0.5 and line["y"] <= first_page.rect.height * 0.35
+    ]
+    title_lines.sort(key=lambda item: (item["y"], item["x"]))
+    title = clean_pdf_line(" ".join(line["text"] for line in title_lines))
+    if 4 <= len(title.split()) <= 30 and not title_candidate_is_noise(title, filename):
+        return title.rstrip(".")
+    return ""
+
+
+def infer_article_title(first_page_text: str, pdf_title: str, filename: str) -> str:
+    if pdf_title and not looks_like_internal_title(pdf_title, filename):
+        return clean_pdf_line(pdf_title)
+
+    stop_markers = {
+        "abstract",
+        "keywords",
+        "introduction",
+        "references",
+        "methods",
+        "materials and methods",
+    }
     lines: list[str] = []
     for raw_line in first_page_text.splitlines():
         line = clean_pdf_line(raw_line)
@@ -297,7 +347,7 @@ def infer_article_title(first_page_text: str, pdf_title: str, filename: str) -> 
         lowered = line.lower().rstrip(":")
         if lowered in stop_markers:
             break
-        if any(re.search(pattern, lowered) for pattern in noise_patterns):
+        if title_candidate_is_noise(line, filename):
             continue
         if re.search(r"\b\d{4}\b", lowered) and len(line.split()) <= 5:
             continue
@@ -316,13 +366,7 @@ def infer_article_title(first_page_text: str, pdf_title: str, filename: str) -> 
             if not 5 <= len(words) <= 28:
                 continue
             lowered = candidate.lower()
-            if looks_like_internal_title(candidate, filename):
-                continue
-            if lowered.count(",") >= 3:
-                continue
-            if re.search(r"\b(university|department|faculty|institute|hospital|clinic)\b", lowered):
-                continue
-            if re.search(r"\b(author|license|creative commons|citation)\b", lowered):
+            if title_candidate_is_noise(candidate, filename):
                 continue
 
             score = 100 - abs(14 - len(words)) * 2 - start
@@ -335,7 +379,9 @@ def infer_article_title(first_page_text: str, pdf_title: str, filename: str) -> 
     if candidates:
         return max(candidates, key=lambda item: item[0])[1]
 
-    return clean_pdf_line(pdf_title) if pdf_title else ""
+    if pdf_title and not looks_like_internal_title(pdf_title, filename):
+        return clean_pdf_line(pdf_title)
+    return ""
 
 
 def extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> dict[str, Any]:
@@ -353,8 +399,9 @@ def extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> dict[str, Any]:
     pdf_metadata = document.metadata or {}
     pdf_title = pdf_metadata.get("title") or ""
     first_page_text = pages[0]["text"] if pages else ""
+    layout_title = infer_layout_title(document[0], filename) if document.page_count else ""
     metadata = {
-        "title": infer_article_title(first_page_text, pdf_title, filename),
+        "title": layout_title or infer_article_title(first_page_text, pdf_title, filename),
         "pdf_metadata_title": pdf_title,
         "author": pdf_metadata.get("author") or "",
         "page_count": document.page_count,
