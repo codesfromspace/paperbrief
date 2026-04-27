@@ -1,0 +1,631 @@
+import json
+import os
+import tempfile
+import uuid
+from typing import Any
+
+import fitz
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from openai import OpenAI
+from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Inches, Pt
+
+
+SYSTEM_PROMPT = """You are a scientific claim extraction engine.
+
+You MUST produce structured scientific claims.
+
+Rules:
+- Never copy sentences from the paper
+- Never output generic statements
+- Always infer the mechanism if not explicit
+- Prefer specific, mechanistic, causal claims
+- Empty fields are forbidden
+
+If unclear:
+→ infer the most likely scientific interpretation
+
+Reject generic outputs.
+
+Output format:
+
+{
+  "full_structured_claims": {
+    "thesis": "",
+    "why_it_matters": [],
+    "study_design": {
+      "model_system": [],
+      "methods": [],
+      "sample": "",
+      "manipulation": "",
+      "measures": []
+    },
+    "core_evidence": [],
+    "mechanism": "",
+    "boundary_conditions": [],
+    "generalizable_insight": ""
+  },
+  "infographic_claims": {
+    "thesis": "",
+    "why_it_matters": [],
+    "study_design": {
+      "model_system": "",
+      "methods": "",
+      "sample": "",
+      "manipulation": "",
+      "measures": ""
+    },
+    "core_evidence": [
+      {"title": "", "claim": ""},
+      {"title": "", "claim": ""},
+      {"title": "", "claim": ""},
+      {"title": "", "claim": ""}
+    ],
+    "mechanism": "",
+    "boundary_conditions": [],
+    "generalizable_insight": ""
+  }
+}
+
+After generating scientific claims, compress them for infographic display.
+
+Hard limits for infographic_claims:
+- Thesis: max 28 words
+- Why it matters: max 3 bullets, each max 14 words
+- Study design fields: max 12 words each
+- Core evidence: exactly 4 cards
+- Each evidence card title: max 4 words
+- Each evidence card claim: max 22 words
+- Mechanism: max 35 words
+- Boundary conditions: max 3 bullets, each max 16 words
+- Generalizable insight: max 28 words
+
+No paragraphs inside cards.
+No semicolons.
+No parenthetical overload.
+Prefer short causal sentences.
+Renderers will display only infographic_claims by default.
+"""
+
+
+FULL_CLAIMS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "thesis",
+        "why_it_matters",
+        "study_design",
+        "core_evidence",
+        "mechanism",
+        "boundary_conditions",
+        "generalizable_insight",
+    ],
+    "properties": {
+        "thesis": {"type": "string"},
+        "why_it_matters": {"type": "array", "items": {"type": "string"}},
+        "study_design": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["model_system", "methods", "sample", "manipulation", "measures"],
+            "properties": {
+                "model_system": {"type": "array", "items": {"type": "string"}},
+                "methods": {"type": "array", "items": {"type": "string"}},
+                "sample": {"type": "string"},
+                "manipulation": {"type": "string"},
+                "measures": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "core_evidence": {"type": "array", "items": {"type": "string"}},
+        "mechanism": {"type": "string"},
+        "boundary_conditions": {"type": "array", "items": {"type": "string"}},
+        "generalizable_insight": {"type": "string"},
+    },
+}
+
+
+INFOGRAPHIC_CLAIMS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "thesis",
+        "why_it_matters",
+        "study_design",
+        "core_evidence",
+        "mechanism",
+        "boundary_conditions",
+        "generalizable_insight",
+    ],
+    "properties": {
+        "thesis": {"type": "string"},
+        "why_it_matters": {"type": "array", "items": {"type": "string"}},
+        "study_design": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["model_system", "methods", "sample", "manipulation", "measures"],
+            "properties": {
+                "model_system": {"type": "string"},
+                "methods": {"type": "string"},
+                "sample": {"type": "string"},
+                "manipulation": {"type": "string"},
+                "measures": {"type": "string"},
+            },
+        },
+        "core_evidence": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["title", "claim"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "claim": {"type": "string"},
+                },
+            },
+        },
+        "mechanism": {"type": "string"},
+        "boundary_conditions": {"type": "array", "items": {"type": "string"}},
+        "generalizable_insight": {"type": "string"},
+    },
+}
+
+
+CLAIMS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["full_structured_claims", "infographic_claims"],
+    "properties": {
+        "full_structured_claims": FULL_CLAIMS_SCHEMA,
+        "infographic_claims": INFOGRAPHIC_CLAIMS_SCHEMA,
+    },
+}
+
+SYNTHESIS_PROMPT = """You are a cross-paper synthesis engine.
+
+Use only the supplied structured claims.
+Do not invent new paper-specific evidence.
+Find the shared mechanism, disagreements, boundary conditions, and a general research implication.
+
+Return compressed JSON for infographic display.
+No generic statements.
+No empty fields.
+"""
+
+SYNTHESIS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["synthesis_thesis", "shared_mechanisms", "contrasts", "boundary_conditions", "research_implication"],
+    "properties": {
+        "synthesis_thesis": {"type": "string"},
+        "shared_mechanisms": {"type": "array", "items": {"type": "string"}},
+        "contrasts": {"type": "array", "items": {"type": "string"}},
+        "boundary_conditions": {"type": "array", "items": {"type": "string"}},
+        "research_implication": {"type": "string"},
+    },
+}
+
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BATCH_STORE: dict[str, dict[str, Any]] = {}
+
+app = FastAPI(title="PaperBrief API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/static", StaticFiles(directory=ROOT_DIR), name="static")
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(os.path.join(ROOT_DIR, "index.html"))
+
+
+@app.get("/app.js")
+def app_js() -> FileResponse:
+    return FileResponse(os.path.join(ROOT_DIR, "app.js"))
+
+
+@app.get("/styles.css")
+def styles_css() -> FileResponse:
+    return FileResponse(os.path.join(ROOT_DIR, "styles.css"))
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+def extract_pdf_text(pdf_bytes: bytes) -> dict[str, Any]:
+    try:
+        document = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not open PDF: {exc}") from exc
+
+    pages: list[dict[str, Any]] = []
+    for page_index, page in enumerate(document, start=1):
+        text = page.get_text("text").strip()
+        pages.append({"page": page_index, "text": text})
+
+    raw_text = "\n\n".join(f"[PAGE {page['page']}]\n{page['text']}" for page in pages if page["text"])
+    metadata = {
+        "title": (document.metadata or {}).get("title") or "",
+        "author": (document.metadata or {}).get("author") or "",
+        "page_count": document.page_count,
+        "char_count": len(raw_text),
+    }
+    document.close()
+
+    if not raw_text.strip():
+        raise HTTPException(status_code=400, detail="No extractable text found. The PDF may be scanned or encrypted.")
+
+    return {"text": raw_text, "metadata": metadata}
+
+
+def build_user_input(raw_text: str, metadata: dict[str, Any], filename: str) -> str:
+    max_chars = 120_000
+    clipped_text = raw_text[:max_chars]
+    clipping_note = ""
+    if len(raw_text) > max_chars:
+        clipping_note = f"\n\n[NOTE: PDF text was clipped from {len(raw_text)} to {max_chars} characters.]"
+
+    return f"""Extract structured scientific claims from this paper.
+
+Additional instructions:
+- prioritize mechanism over description
+- convert descriptive findings into causal statements
+- produce a strong one-line thesis
+- include a generalizable insight
+- do not copy paper sentences verbatim
+- reject generic background claims
+
+PDF metadata:
+- filename: {filename}
+- title: {metadata.get("title") or "not detected"}
+- author: {metadata.get("author") or "not detected"}
+- pages: {metadata.get("page_count")}
+
+Input:
+{clipped_text}{clipping_note}
+"""
+
+
+def call_openai(api_key: str, model: str, user_input: str) -> dict[str, Any]:
+    client = OpenAI(api_key=api_key)
+    response = client.responses.create(
+        model=model,
+        instructions=SYSTEM_PROMPT,
+        input=user_input,
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "structured_scientific_claims",
+                "strict": True,
+                "schema": CLAIMS_SCHEMA,
+            }
+        },
+    )
+
+    try:
+        claims = json.loads(response.output_text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Model did not return valid JSON: {exc}") from exc
+    normalization_notes = normalize_infographic_claims(claims)
+    validate_claims(claims)
+    claims["_normalization_notes"] = normalization_notes
+    return claims
+
+
+def call_openai_synthesis(api_key: str, model: str, papers: list[dict[str, Any]]) -> dict[str, Any]:
+    client = OpenAI(api_key=api_key)
+    synthesis_input = {
+        "task": "Cross-paper synthesis",
+        "papers": [
+            {
+                "filename": paper["filename"],
+                "metadata": paper["metadata"],
+                "claims": paper["claims"]["full_structured_claims"],
+                "infographic": paper["claims"]["infographic_claims"],
+            }
+            for paper in papers
+        ],
+    }
+    response = client.responses.create(
+        model=model,
+        instructions=SYNTHESIS_PROMPT,
+        input=json.dumps(synthesis_input),
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "cross_paper_synthesis",
+                "strict": True,
+                "schema": SYNTHESIS_SCHEMA,
+            }
+        },
+    )
+    try:
+        return json.loads(response.output_text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Synthesis did not return valid JSON: {exc}") from exc
+
+
+def word_count(text: str) -> int:
+    return len(str(text).replace("→", " ").split())
+
+
+def strip_overload(text: str) -> str:
+    clean = str(text).replace(";", ",").strip()
+    while "(" in clean and ")" in clean:
+        start = clean.find("(")
+        end = clean.find(")", start)
+        if end == -1:
+            break
+        clean = f"{clean[:start].rstrip()} {clean[end + 1:].lstrip()}".strip()
+    return " ".join(clean.split())
+
+
+def limit_words(text: str, limit: int) -> str:
+    words = strip_overload(text).split()
+    if len(words) <= limit:
+        return " ".join(words)
+    return " ".join(words[:limit]).rstrip(" ,.")
+
+
+def normalize_infographic_claims(claims: dict[str, Any]) -> list[str]:
+    infographic = claims.get("infographic_claims")
+    if not isinstance(infographic, dict):
+        return []
+
+    notes: list[str] = []
+
+    def normalize_text(label: str, value: Any, limit: int) -> str:
+        original = strip_overload(str(value or ""))
+        normalized = limit_words(original, limit)
+        if normalized != original:
+            notes.append(f"{label} compressed")
+        return normalized or "Not specified"
+
+    infographic["thesis"] = normalize_text("thesis", infographic.get("thesis", ""), 28)
+    infographic["why_it_matters"] = [
+        normalize_text(f"why_it_matters[{index + 1}]", item, 14)
+        for index, item in enumerate((infographic.get("why_it_matters") or [])[:3])
+    ] or ["Paper changes the mechanistic interpretation of the problem"]
+
+    design = infographic.get("study_design") or {}
+    infographic["study_design"] = {
+        "model_system": normalize_text("study_design.model_system", design.get("model_system", ""), 12),
+        "methods": normalize_text("study_design.methods", design.get("methods", ""), 12),
+        "sample": normalize_text("study_design.sample", design.get("sample", ""), 12),
+        "manipulation": normalize_text("study_design.manipulation", design.get("manipulation", ""), 12),
+        "measures": normalize_text("study_design.measures", design.get("measures", ""), 12),
+    }
+
+    evidence = list(infographic.get("core_evidence") or [])
+    while len(evidence) < 4:
+        evidence.append({"title": f"Claim {len(evidence) + 1}", "claim": "Mechanistic claim requires model retry"})
+    infographic["core_evidence"] = [
+        {
+            "title": normalize_text(f"core_evidence[{index + 1}].title", card.get("title", ""), 4),
+            "claim": normalize_text(f"core_evidence[{index + 1}].claim", card.get("claim", ""), 22),
+        }
+        for index, card in enumerate(evidence[:4])
+    ]
+
+    infographic["mechanism"] = normalize_text("mechanism", infographic.get("mechanism", ""), 35)
+    infographic["boundary_conditions"] = [
+        normalize_text(f"boundary_conditions[{index + 1}]", item, 16)
+        for index, item in enumerate((infographic.get("boundary_conditions") or [])[:3])
+    ] or ["Boundary conditions require closer reading"]
+    infographic["generalizable_insight"] = normalize_text(
+        "generalizable_insight", infographic.get("generalizable_insight", ""), 28
+    )
+    return notes
+
+
+def validate_claims(claims: dict[str, Any]) -> None:
+    def empty(value: Any) -> bool:
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, list):
+            return len(value) == 0 or any(empty(item) for item in value)
+        if isinstance(value, dict):
+            return any(empty(item) for item in value.values())
+        return value is None
+
+    if empty(claims):
+        raise HTTPException(status_code=502, detail="Model returned empty fields; retry generation.")
+
+    infographic = claims.get("infographic_claims", {})
+    errors: list[str] = []
+
+    def check_words(label: str, text: str, limit: int) -> None:
+        if word_count(text) > limit:
+            errors.append(f"{label} exceeds {limit} words")
+        if ";" in str(text):
+            errors.append(f"{label} contains a semicolon")
+
+    check_words("thesis", infographic.get("thesis", ""), 28)
+    for index, item in enumerate(infographic.get("why_it_matters", []), start=1):
+      check_words(f"why_it_matters[{index}]", item, 14)
+    if len(infographic.get("why_it_matters", [])) > 3:
+        errors.append("why_it_matters exceeds 3 bullets")
+
+    design = infographic.get("study_design", {})
+    for key in ["model_system", "methods", "sample", "manipulation", "measures"]:
+        check_words(f"study_design.{key}", design.get(key, ""), 12)
+
+    evidence = infographic.get("core_evidence", [])
+    if len(evidence) != 4:
+        errors.append("core_evidence must contain exactly 4 cards")
+    for index, card in enumerate(evidence, start=1):
+        check_words(f"core_evidence[{index}].title", card.get("title", ""), 4)
+        check_words(f"core_evidence[{index}].claim", card.get("claim", ""), 22)
+
+    check_words("mechanism", infographic.get("mechanism", ""), 35)
+    for index, item in enumerate(infographic.get("boundary_conditions", []), start=1):
+        check_words(f"boundary_conditions[{index}]", item, 16)
+    if len(infographic.get("boundary_conditions", [])) > 3:
+        errors.append("boundary_conditions exceeds 3 bullets")
+    check_words("generalizable_insight", infographic.get("generalizable_insight", ""), 28)
+
+    if errors:
+        raise HTTPException(status_code=502, detail=f"Model returned non-compliant infographic_claims: {', '.join(errors)}")
+
+
+@app.post("/api/generate")
+async def generate_claims(
+    pdf: UploadFile = File(...),
+    api_key: str | None = Form(default=None),
+    model: str = Form(default="gpt-5.2"),
+) -> dict[str, Any]:
+    key = (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Provide an API key or set OPENAI_API_KEY.")
+
+    if not pdf.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Upload a PDF file.")
+
+    pdf_bytes = await pdf.read()
+    parsed = extract_pdf_text(pdf_bytes)
+    user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
+    claims = call_openai(key, model, user_input)
+
+    return {
+        "filename": pdf.filename,
+        "metadata": parsed["metadata"],
+        "model": model,
+        "claims": claims,
+    }
+
+
+@app.post("/api/generate-batch")
+async def generate_batch(
+    pdfs: list[UploadFile] = File(...),
+    api_key: str | None = Form(default=None),
+    model: str = Form(default="gpt-5.2"),
+) -> dict[str, Any]:
+    key = (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Provide an API key or set OPENAI_API_KEY.")
+    if not pdfs:
+        raise HTTPException(status_code=400, detail="Upload at least one PDF.")
+
+    papers: list[dict[str, Any]] = []
+    for pdf in pdfs:
+        if not pdf.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF.")
+        parsed = extract_pdf_text(await pdf.read())
+        user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
+        claims = call_openai(key, model, user_input)
+        papers.append({
+            "filename": pdf.filename,
+            "metadata": parsed["metadata"],
+            "model": model,
+            "claims": claims,
+        })
+
+    synthesis = None
+    if len(papers) > 1:
+        synthesis = call_openai_synthesis(key, model, papers)
+
+    batch_id = str(uuid.uuid4())
+    payload = {
+        "batch_id": batch_id,
+        "model": model,
+        "papers": papers,
+        "synthesis": synthesis,
+    }
+    BATCH_STORE[batch_id] = payload
+    return payload
+
+
+def add_textbox(slide, left, top, width, height, text, size=18, bold=False, color=RGBColor(29, 36, 35)):
+    box = slide.shapes.add_textbox(left, top, width, height)
+    frame = box.text_frame
+    frame.clear()
+    paragraph = frame.paragraphs[0]
+    paragraph.alignment = PP_ALIGN.LEFT
+    run = paragraph.add_run()
+    run.text = text
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = color
+    return box
+
+
+def add_bullets(slide, left, top, width, height, items, size=14):
+    box = slide.shapes.add_textbox(left, top, width, height)
+    frame = box.text_frame
+    frame.clear()
+    for index, item in enumerate(items):
+        paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+        paragraph.text = item
+        paragraph.level = 0
+        paragraph.font.size = Pt(size)
+    return box
+
+
+def build_pptx(batch: dict[str, Any]) -> str:
+    deck = Presentation()
+    deck.slide_width = Inches(13.333)
+    deck.slide_height = Inches(7.5)
+    blank = deck.slide_layouts[6]
+
+    cover = deck.slides.add_slide(blank)
+    add_textbox(cover, Inches(0.7), Inches(0.65), Inches(11.8), Inches(0.4), "PaperBrief", 14, True, RGBColor(216, 111, 87))
+    add_textbox(cover, Inches(0.7), Inches(1.35), Inches(11.8), Inches(1.0), "Scientific Claims Deck", 36, True)
+    add_textbox(cover, Inches(0.7), Inches(2.35), Inches(10.5), Inches(0.6), f"{len(batch['papers'])} paper(s) · generated from OpenAI structured claims", 18)
+
+    if batch.get("synthesis"):
+        synthesis = batch["synthesis"]
+        slide = deck.slides.add_slide(blank)
+        add_textbox(slide, Inches(0.7), Inches(0.55), Inches(11.8), Inches(0.5), "Cross-paper synthesis", 30, True)
+        add_textbox(slide, Inches(0.7), Inches(1.25), Inches(11.8), Inches(0.8), synthesis["synthesis_thesis"], 20, True)
+        add_textbox(slide, Inches(0.7), Inches(2.25), Inches(3.5), Inches(0.3), "Shared mechanisms", 13, True, RGBColor(31, 122, 120))
+        add_bullets(slide, Inches(0.7), Inches(2.6), Inches(3.7), Inches(2.3), synthesis["shared_mechanisms"][:4], 13)
+        add_textbox(slide, Inches(4.8), Inches(2.25), Inches(3.5), Inches(0.3), "Contrasts", 13, True, RGBColor(31, 122, 120))
+        add_bullets(slide, Inches(4.8), Inches(2.6), Inches(3.7), Inches(2.3), synthesis["contrasts"][:4], 13)
+        add_textbox(slide, Inches(8.9), Inches(2.25), Inches(3.5), Inches(0.3), "Research implication", 13, True, RGBColor(31, 122, 120))
+        add_textbox(slide, Inches(8.9), Inches(2.6), Inches(3.7), Inches(1.4), synthesis["research_implication"], 15, True)
+
+    for paper in batch["papers"]:
+        claims = paper["claims"]["infographic_claims"]
+        slide = deck.slides.add_slide(blank)
+        metadata = paper.get("metadata") or {}
+        title = metadata.get("title") or claims.get("title") or paper.get("filename", "Uploaded paper")
+        add_textbox(slide, Inches(0.7), Inches(0.45), Inches(10.8), Inches(0.55), title[:120], 24, True)
+        add_textbox(slide, Inches(0.7), Inches(1.1), Inches(11.7), Inches(0.6), claims["thesis"], 18, True, RGBColor(31, 122, 120))
+        add_textbox(slide, Inches(0.7), Inches(2.0), Inches(3.6), Inches(0.3), "Why it matters", 12, True, RGBColor(216, 111, 87))
+        add_bullets(slide, Inches(0.7), Inches(2.35), Inches(3.7), Inches(1.6), claims["why_it_matters"], 12)
+        add_textbox(slide, Inches(4.8), Inches(2.0), Inches(3.6), Inches(0.3), "Core evidence", 12, True, RGBColor(216, 111, 87))
+        evidence_lines = [f"{card['title']}: {card['claim']}" for card in claims["core_evidence"]]
+        add_bullets(slide, Inches(4.8), Inches(2.35), Inches(4.0), Inches(2.3), evidence_lines, 12)
+        add_textbox(slide, Inches(9.2), Inches(2.0), Inches(3.2), Inches(0.3), "Mechanism", 12, True, RGBColor(216, 111, 87))
+        add_textbox(slide, Inches(9.2), Inches(2.35), Inches(3.3), Inches(1.2), claims["mechanism"], 13, True)
+        add_textbox(slide, Inches(0.7), Inches(5.45), Inches(11.8), Inches(0.5), claims["generalizable_insight"], 18, True)
+
+    export_dir = os.path.join(os.getcwd(), "exports")
+    os.makedirs(export_dir, exist_ok=True)
+    output = os.path.join(export_dir, f"paperbrief-{batch.get('batch_id', uuid.uuid4().hex)}.pptx")
+    deck.save(output)
+    return output
+
+
+@app.get("/api/export-pptx/{batch_id}")
+def export_pptx(batch_id: str) -> FileResponse:
+    batch = BATCH_STORE.get(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found. Generate a batch first.")
+    path = build_pptx(batch)
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename="paperbrief-claims.pptx",
+    )
