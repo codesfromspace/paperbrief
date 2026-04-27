@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from openai import OpenAI
+from openai import AuthenticationError, OpenAI, OpenAIError
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
@@ -443,21 +443,35 @@ Input:
 """
 
 
+def resolve_api_key(api_key: str | None) -> str:
+    key = (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Provide an API key or set OPENAI_API_KEY.")
+    if not key.startswith("sk-"):
+        raise HTTPException(status_code=401, detail="OpenAI API key looks invalid. It should start with sk-.")
+    return key
+
+
 def call_openai(api_key: str, model: str, user_input: str) -> dict[str, Any]:
     client = OpenAI(api_key=api_key)
-    response = client.responses.create(
-        model=model,
-        instructions=SYSTEM_PROMPT,
-        input=user_input,
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "structured_scientific_claims",
-                "strict": True,
-                "schema": CLAIMS_SCHEMA,
-            }
-        },
-    )
+    try:
+        response = client.responses.create(
+            model=model,
+            instructions=SYSTEM_PROMPT,
+            input=user_input,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "structured_scientific_claims",
+                    "strict": True,
+                    "schema": CLAIMS_SCHEMA,
+                }
+            },
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail="OpenAI rejected the API key. Paste a valid key or set OPENAI_API_KEY.") from exc
+    except OpenAIError as exc:
+        raise HTTPException(status_code=502, detail=f"OpenAI API request failed: {exc}") from exc
 
     try:
         claims = json.loads(response.output_text)
@@ -483,19 +497,24 @@ def call_openai_synthesis(api_key: str, model: str, papers: list[dict[str, Any]]
             for paper in papers
         ],
     }
-    response = client.responses.create(
-        model=model,
-        instructions=SYNTHESIS_PROMPT,
-        input=json.dumps(synthesis_input),
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "cross_paper_synthesis",
-                "strict": True,
-                "schema": SYNTHESIS_SCHEMA,
-            }
-        },
-    )
+    try:
+        response = client.responses.create(
+            model=model,
+            instructions=SYNTHESIS_PROMPT,
+            input=json.dumps(synthesis_input),
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "cross_paper_synthesis",
+                    "strict": True,
+                    "schema": SYNTHESIS_SCHEMA,
+                }
+            },
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail="OpenAI rejected the API key. Paste a valid key or set OPENAI_API_KEY.") from exc
+    except OpenAIError as exc:
+        raise HTTPException(status_code=502, detail=f"OpenAI synthesis request failed: {exc}") from exc
     try:
         return json.loads(response.output_text)
     except Exception as exc:
@@ -631,9 +650,7 @@ async def generate_claims(
     api_key: str | None = Form(default=None),
     model: str = Form(default="gpt-5.2"),
 ) -> dict[str, Any]:
-    key = (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
-    if not key:
-        raise HTTPException(status_code=400, detail="Provide an API key or set OPENAI_API_KEY.")
+    key = resolve_api_key(api_key)
 
     if not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Upload a PDF file.")
@@ -657,9 +674,7 @@ async def generate_batch(
     api_key: str | None = Form(default=None),
     model: str = Form(default="gpt-5.2"),
 ) -> dict[str, Any]:
-    key = (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
-    if not key:
-        raise HTTPException(status_code=400, detail="Provide an API key or set OPENAI_API_KEY.")
+    key = resolve_api_key(api_key)
     if not pdfs:
         raise HTTPException(status_code=400, detail="Upload at least one PDF.")
 

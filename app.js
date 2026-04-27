@@ -54,6 +54,15 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+async function parseApiResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+  const text = await response.text();
+  return { detail: text || response.statusText || "Request failed." };
+}
+
 function normalizeClaims(payload, view) {
   if (view === "full") {
     const full = payload.claims.full_structured_claims;
@@ -175,7 +184,13 @@ async function generateInfographic(event) {
   const formData = new FormData();
   files.forEach((file) => formData.append("pdfs", file));
   formData.append("model", modelInput.value.trim() || "gpt-5.2");
-  if (apiKey.value.trim()) formData.append("api_key", apiKey.value.trim());
+  const enteredApiKey = apiKey.value.trim();
+  if (enteredApiKey && !enteredApiKey.startsWith("sk-")) {
+    statusPill.textContent = "Invalid API key";
+    showToast("OpenAI API key looks wrong. It should start with sk-.");
+    return;
+  }
+  if (enteredApiKey) formData.append("api_key", enteredApiKey);
 
   const baseUrl = backendUrl.value.trim().replace(/\/$/, "");
   setBusy(true);
@@ -186,7 +201,7 @@ async function generateInfographic(event) {
       body: formData,
     });
 
-    const payload = await response.json();
+    const payload = await parseApiResponse(response);
     if (!response.ok) {
       throw new Error(payload.detail || "Generation failed.");
     }
@@ -232,7 +247,7 @@ pptxButton.addEventListener("click", async () => {
   try {
     const response = await fetch(`${baseUrl}/api/export-pptx/${latestBatch.batch_id}`);
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
+      const payload = await parseApiResponse(response).catch(() => ({}));
       throw new Error(payload.detail || "PPTX export failed.");
     }
 
