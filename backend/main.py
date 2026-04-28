@@ -210,23 +210,55 @@ SYNTHESIS_SCHEMA: dict[str, Any] = {
     },
 }
 
-TITLE_LOOKUP_PROMPT = """You resolve scientific article titles from DOI identifiers.
+TITLE_LOOKUP_PROMPT = """You resolve scientific article metadata from DOI identifiers.
 
 Use web search when available.
 Return the exact article title matching the DOI.
+Return the journal name.
+Find one commonly reported journal-level metric when available, preferring Journal Impact Factor, CiteScore, SJR, or journal quartile.
+Assign an interest tier from the metric only:
+- very_high: top-tier metric, usually Q1 or unusually high field-adjusted value
+- high: strong journal metric
+- moderate: visible but not top-tier metric
+- low: weak, unavailable, or unverified metric
 Do not return PDF filenames, journal section labels, publisher IDs, or guessed titles.
-If the title cannot be verified from the DOI, return an empty title and low confidence.
+If a field cannot be verified, return "not found" and low confidence.
 """
 
 TITLE_LOOKUP_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["doi", "title", "confidence", "source_url"],
+    "required": ["doi", "title", "journal", "confidence", "source_url", "journal_metric"],
     "properties": {
         "doi": {"type": "string"},
         "title": {"type": "string"},
+        "journal": {"type": "string"},
         "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
         "source_url": {"type": "string"},
+        "journal_metric": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "metric_name",
+                "metric_value",
+                "metric_year",
+                "quartile",
+                "interest_score",
+                "interest_tier",
+                "rationale",
+                "source_url",
+            ],
+            "properties": {
+                "metric_name": {"type": "string"},
+                "metric_value": {"type": "string"},
+                "metric_year": {"type": "string"},
+                "quartile": {"type": "string"},
+                "interest_score": {"type": "integer", "minimum": 0, "maximum": 100},
+                "interest_tier": {"type": "string", "enum": ["low", "moderate", "high", "very_high"]},
+                "rationale": {"type": "string"},
+                "source_url": {"type": "string"},
+            },
+        },
     },
 }
 
@@ -434,6 +466,8 @@ def extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> dict[str, Any]:
         "fallback_title": fallback_title,
         "title_source": "pdf_fallback" if fallback_title else "not_detected",
         "doi": extract_doi(raw_text),
+        "journal": "",
+        "journal_metric": normalize_journal_metric(None),
         "pdf_metadata_title": pdf_title,
         "author": pdf_metadata.get("author") or "",
         "page_count": document.page_count,
@@ -487,6 +521,7 @@ PDF metadata:
 - filename: {filename}
 - title: {metadata.get("title") or "not detected"}
 - doi: {metadata.get("doi") or "not detected"}
+- journal: {metadata.get("journal") or "not detected"}
 - author: {metadata.get("author") or "not detected"}
 - pages: {metadata.get("page_count")}
 
@@ -573,9 +608,8 @@ def call_openai_title_lookup(api_key: str, model: str, metadata: dict[str, Any],
         return None
 
     title = clean_pdf_line(result.get("title", ""))
-    if not title or result.get("confidence") == "low" or title_candidate_is_noise(title, filename):
-        return None
     result["title"] = title.rstrip(".")
+    result["journal"] = clean_pdf_line(result.get("journal", ""))
     return result
 
 
@@ -589,10 +623,36 @@ def resolve_title_with_openai(api_key: str, model: str, parsed: dict[str, Any], 
         metadata["title_source"] = "pdf_fallback_after_doi_lookup"
         return
 
-    metadata["title"] = lookup["title"]
-    metadata["title_source"] = "openai_doi_lookup"
-    metadata["title_lookup_confidence"] = lookup.get("confidence", "")
-    metadata["title_lookup_source_url"] = lookup.get("source_url", "")
+    title = lookup.get("title", "")
+    if title and lookup.get("confidence") != "low" and not title_candidate_is_noise(title, filename):
+        metadata["title"] = title
+        metadata["title_source"] = "openai_doi_lookup"
+        metadata["title_lookup_confidence"] = lookup.get("confidence", "")
+        metadata["title_lookup_source_url"] = lookup.get("source_url", "")
+    else:
+        metadata["title_source"] = "pdf_fallback_after_doi_lookup"
+    metadata["journal"] = lookup.get("journal", "")
+    metadata["journal_metric"] = normalize_journal_metric(lookup.get("journal_metric"))
+
+
+def normalize_journal_metric(metric: Any) -> dict[str, Any]:
+    if not isinstance(metric, dict):
+        metric = {}
+    tier = metric.get("interest_tier") if metric.get("interest_tier") in {"low", "moderate", "high", "very_high"} else "low"
+    try:
+        score = int(metric.get("interest_score", 0))
+    except (TypeError, ValueError):
+        score = 0
+    return {
+        "metric_name": clean_pdf_line(str(metric.get("metric_name") or "not found")),
+        "metric_value": clean_pdf_line(str(metric.get("metric_value") or "not found")),
+        "metric_year": clean_pdf_line(str(metric.get("metric_year") or "not found")),
+        "quartile": clean_pdf_line(str(metric.get("quartile") or "not found")),
+        "interest_score": max(0, min(100, score)),
+        "interest_tier": tier,
+        "rationale": clean_pdf_line(str(metric.get("rationale") or "Metric unavailable or unverified")),
+        "source_url": clean_pdf_line(str(metric.get("source_url") or "")),
+    }
 
 
 def call_openai_synthesis(api_key: str, model: str, papers: list[dict[str, Any]]) -> dict[str, Any]:

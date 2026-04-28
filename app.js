@@ -236,6 +236,9 @@ function renderClaims(payload, view = currentView) {
   const metadata = payload.metadata;
 
   document.querySelector("#sourceLabel").textContent = "OpenAI Responses API";
+  if (metadata.journal && metadata.journal !== "not found") {
+    document.querySelector("#sourceLabel").textContent = metadata.journal;
+  }
   document.querySelector("#paperTitle").textContent = metadata.title || payload.filename;
   document.querySelector("#paperTitle").dataset.editField = "title";
   document.querySelector("#modelBadge").textContent = payload.model;
@@ -244,6 +247,7 @@ function renderClaims(payload, view = currentView) {
   document.querySelector("#charsMeta").textContent = `${metadata.char_count.toLocaleString()} chars`;
   const notes = payload.claims._normalization_notes || [];
   document.querySelector("#normalizationMeta").textContent = notes.length ? `${notes.length} fields compressed` : "No compression";
+  renderJournalMetric(metadata);
   renderSnapshot(payload);
 
   document.querySelector("#thesisText").textContent = claims.thesis;
@@ -280,6 +284,23 @@ function renderClaims(payload, view = currentView) {
   renderStep.classList.add("is-done");
   statusPill.textContent = "Infographic ready";
   applyEditMode();
+}
+
+function renderJournalMetric(metadata) {
+  const badge = document.querySelector("#journalMetricMeta");
+  const metric = metadata.journal_metric || {};
+  const tier = ["low", "moderate", "high", "very_high"].includes(metric.interest_tier)
+    ? metric.interest_tier
+    : "low";
+  const journal = metadata.journal || "Journal not found";
+  const metricName = metric.metric_name && metric.metric_name !== "not found" ? metric.metric_name : "metric not found";
+  const metricValue = metric.metric_value && metric.metric_value !== "not found" ? metric.metric_value : "";
+  const quartile = metric.quartile && metric.quartile !== "not found" ? ` ${metric.quartile}` : "";
+  const score = Number.isFinite(Number(metric.interest_score)) ? ` · ${metric.interest_score}/100` : "";
+
+  badge.className = `metric-badge metric-${tier}`;
+  badge.textContent = `${journal}: ${metricName}${metricValue ? ` ${metricValue}` : ""}${quartile}${score}`;
+  badge.title = metric.rationale || "Journal-level metric from DOI lookup";
 }
 
 function renderSnapshot(payload) {

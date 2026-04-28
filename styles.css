@@ -760,6 +760,34 @@ h2 {
   font-size: 11px;
 }
 
+.brief-meta .metric-badge {
+  font-weight: 850;
+}
+
+.metric-low {
+  border-color: color-mix(in srgb, var(--muted) 45%, transparent);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.metric-moderate {
+  border-color: color-mix(in srgb, var(--amber) 50%, transparent);
+  background: color-mix(in srgb, var(--warning-bg) 72%, var(--surface));
+  color: var(--warning-ink);
+}
+
+.metric-high {
+  border-color: color-mix(in srgb, var(--teal) 55%, transparent);
+  background: var(--teal-2);
+  color: var(--teal-ink);
+}
+
+.metric-very_high {
+  border-color: color-mix(in srgb, var(--coral) 58%, transparent);
+  background: var(--coral-bg);
+  color: var(--coral-ink);
+}
+
 .tldr {
   display: grid;
   grid-template-columns: 70px 1fr;
