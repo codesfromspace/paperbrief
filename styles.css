@@ -19,6 +19,8 @@
   --coral-ink: #8c3d2f;
   --warning-bg: #f7ead6;
   --warning-ink: #75500f;
+  --primary-bg: #1d2423;
+  --primary-ink: #fffdf8;
   --body-gradient: linear-gradient(180deg, rgba(255, 253, 248, 0.88), rgba(244, 240, 232, 0.96)),
     radial-gradient(circle at 20% 10%, rgba(31, 122, 120, 0.1), transparent 32%);
   --shadow: 0 20px 60px rgba(42, 38, 30, 0.12);
@@ -45,6 +47,8 @@
   --coral-ink: #ffd2c5;
   --warning-bg: #3b301c;
   --warning-ink: #f2c979;
+  --primary-bg: #5bc3bd;
+  --primary-ink: #101413;
   --body-gradient: linear-gradient(180deg, rgba(16, 20, 19, 0.94), rgba(10, 13, 12, 0.98)),
     radial-gradient(circle at 20% 10%, rgba(91, 195, 189, 0.12), transparent 34%);
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
@@ -322,8 +326,8 @@ h2 {
 .secondary-button {
   border: 0;
   border-radius: 8px;
-  background: var(--ink);
-  color: white;
+  background: var(--primary-bg);
+  color: var(--primary-ink);
   padding: 12px 14px;
   font-weight: 800;
   white-space: nowrap;
