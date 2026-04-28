@@ -344,6 +344,10 @@ h2 {
   color: var(--ink);
 }
 
+.secondary-button.is-hidden {
+  display: none;
+}
+
 .dropzone {
   position: relative;
   display: grid;
@@ -600,6 +604,22 @@ h2 {
   background: var(--surface);
   padding: clamp(18px, 3vw, 30px);
   box-shadow: var(--shadow);
+}
+
+.brief-card.is-editing {
+  outline: 2px solid var(--teal);
+  outline-offset: 4px;
+}
+
+.brief-card [contenteditable="true"] {
+  border-radius: 5px;
+  outline: 1px dashed color-mix(in srgb, var(--teal) 58%, transparent);
+  background: color-mix(in srgb, var(--teal-2) 45%, transparent);
+  padding: 2px 4px;
+}
+
+.brief-card li[contenteditable="true"] {
+  padding-left: 4px;
 }
 
 .brief-header {

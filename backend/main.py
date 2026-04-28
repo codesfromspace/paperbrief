@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 import fitz
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -784,6 +784,18 @@ def export_pptx(batch_id: str) -> FileResponse:
     batch = BATCH_STORE.get(batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found. Generate a batch first.")
+    path = build_pptx(batch)
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename="paperbrief-claims.pptx",
+    )
+
+
+@app.post("/api/export-pptx")
+def export_pptx_payload(batch: dict[str, Any] = Body(...)) -> FileResponse:
+    if not batch.get("papers"):
+        raise HTTPException(status_code=400, detail="No papers to export.")
     path = build_pptx(batch)
     return FileResponse(
         path,
