@@ -221,6 +221,55 @@ h2 {
   font-size: 13px;
 }
 
+.profile-box {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fbfa;
+}
+
+.profile-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.profile-heading span,
+.profile-note {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.profile-box .text-input {
+  margin-bottom: 10px;
+}
+
+.profile-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+
+.profile-actions .text-input {
+  margin: 0;
+}
+
+.profile-actions button {
+  padding: 10px 11px;
+}
+
+.danger-button {
+  color: #9a3d31;
+}
+
+.profile-note {
+  margin-top: 8px;
+  line-height: 1.35;
+}
+
 .doi-row button,
 .export-row button,
 .primary-button,

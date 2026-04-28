@@ -30,6 +30,28 @@
           </div>
 
           <form id="generateForm" class="intake-form">
+            <div class="profile-box">
+              <div class="profile-heading">
+                <label class="field-label" for="profileSelect">Profile</label>
+                <span>stored locally</span>
+              </div>
+              <select id="profileSelect" class="text-input">
+                <option value="">No saved profile</option>
+              </select>
+              <div class="profile-actions">
+                <input
+                  id="profileName"
+                  class="text-input"
+                  placeholder="Profile name"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <button class="secondary-button" id="saveProfileButton" type="button">Save</button>
+                <button class="secondary-button danger-button" id="deleteProfileButton" type="button">Delete</button>
+              </div>
+              <p class="profile-note">Profiles save backend URL, model, and API key in this browser only.</p>
+            </div>
+
             <label class="field-label" for="backendUrl">Backend URL</label>
             <input id="backendUrl" class="text-input" value="http://127.0.0.1:8000" />
 

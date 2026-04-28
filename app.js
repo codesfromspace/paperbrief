@@ -2,6 +2,10 @@ const form = document.querySelector("#generateForm");
 const backendUrl = document.querySelector("#backendUrl");
 const apiKey = document.querySelector("#apiKey");
 const modelInput = document.querySelector("#model");
+const profileSelect = document.querySelector("#profileSelect");
+const profileName = document.querySelector("#profileName");
+const saveProfileButton = document.querySelector("#saveProfileButton");
+const deleteProfileButton = document.querySelector("#deleteProfileButton");
 const pdfInput = document.querySelector("#pdfInput");
 const pdfLabel = document.querySelector("#pdfLabel");
 const pdfHelp = document.querySelector("#pdfHelp");
@@ -20,6 +24,8 @@ let latestPayload = null;
 let latestBatch = null;
 let currentView = "short";
 let selectedPaperIndex = 0;
+const PROFILE_STORAGE_KEY = "paperbrief.profiles.v1";
+const ACTIVE_PROFILE_KEY = "paperbrief.activeProfile.v1";
 
 function showToast(message) {
   toast.textContent = message;
@@ -61,6 +67,86 @@ async function parseApiResponse(response) {
   }
   const text = await response.text();
   return { detail: text || response.statusText || "Request failed." };
+}
+
+function readProfiles() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeProfiles(profiles) {
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profiles));
+}
+
+function applyProfile(profile) {
+  if (!profile) return;
+  backendUrl.value = profile.backendUrl || "http://127.0.0.1:8000";
+  modelInput.value = profile.model || "gpt-5.2";
+  apiKey.value = profile.apiKey || "";
+}
+
+function renderProfiles(selectedName = localStorage.getItem(ACTIVE_PROFILE_KEY) || "") {
+  const profiles = readProfiles();
+  const names = Object.keys(profiles).sort((a, b) => a.localeCompare(b));
+  profileSelect.innerHTML = [
+    `<option value="">No saved profile</option>`,
+    ...names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
+  ].join("");
+
+  if (selectedName && profiles[selectedName]) {
+    profileSelect.value = selectedName;
+    profileName.value = selectedName;
+    applyProfile(profiles[selectedName]);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, selectedName);
+  } else {
+    profileSelect.value = "";
+    localStorage.removeItem(ACTIVE_PROFILE_KEY);
+  }
+}
+
+function saveCurrentProfile() {
+  const name = profileName.value.trim();
+  if (!name) {
+    showToast("Enter a profile name first.");
+    return;
+  }
+
+  const enteredApiKey = apiKey.value.trim();
+  if (enteredApiKey && !enteredApiKey.startsWith("sk-")) {
+    showToast("OpenAI API key looks wrong. It should start with sk-.");
+    return;
+  }
+
+  const profiles = readProfiles();
+  profiles[name] = {
+    backendUrl: backendUrl.value.trim() || "http://127.0.0.1:8000",
+    model: modelInput.value.trim() || "gpt-5.2",
+    apiKey: enteredApiKey,
+    savedAt: new Date().toISOString(),
+  };
+  writeProfiles(profiles);
+  renderProfiles(name);
+  showToast(`Profile "${name}" saved locally.`);
+}
+
+function deleteSelectedProfile() {
+  const name = profileSelect.value || profileName.value.trim();
+  const profiles = readProfiles();
+  if (!name || !profiles[name]) {
+    showToast("Select a saved profile first.");
+    return;
+  }
+
+  delete profiles[name];
+  writeProfiles(profiles);
+  localStorage.removeItem(ACTIVE_PROFILE_KEY);
+  profileName.value = "";
+  renderProfiles("");
+  showToast(`Profile "${name}" deleted.`);
 }
 
 function normalizeClaims(payload, view) {
@@ -228,6 +314,21 @@ pdfInput.addEventListener("change", () => {
 });
 
 form.addEventListener("submit", generateInfographic);
+profileSelect.addEventListener("change", () => {
+  const profiles = readProfiles();
+  const name = profileSelect.value;
+  if (!name) {
+    profileName.value = "";
+    localStorage.removeItem(ACTIVE_PROFILE_KEY);
+    return;
+  }
+  profileName.value = name;
+  applyProfile(profiles[name]);
+  localStorage.setItem(ACTIVE_PROFILE_KEY, name);
+  showToast(`Profile "${name}" loaded.`);
+});
+saveProfileButton.addEventListener("click", saveCurrentProfile);
+deleteProfileButton.addEventListener("click", deleteSelectedProfile);
 shortViewButton.addEventListener("click", () => setView("short"));
 fullViewButton.addEventListener("click", () => setView("full"));
 paperTabs.addEventListener("click", (event) => {
@@ -276,3 +377,4 @@ pptxButton.addEventListener("click", async () => {
   }
 });
 document.querySelector("#printButton").addEventListener("click", () => window.print());
+renderProfiles();
