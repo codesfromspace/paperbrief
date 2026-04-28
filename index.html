@@ -96,6 +96,24 @@
               </span>
             </label>
 
+            <fieldset class="batch-mode is-hidden" id="batchMode">
+              <legend>Batch mode</legend>
+              <label>
+                <input type="radio" name="batchMode" value="separate" checked />
+                <span>
+                  <strong>Separate briefs</strong>
+                  <small>One infographic per PDF.</small>
+                </span>
+              </label>
+              <label>
+                <input type="radio" name="batchMode" value="synthesis" />
+                <span>
+                  <strong>Synthesis</strong>
+                  <small>One cross-paper synthesis plus individual briefs.</small>
+                </span>
+              </label>
+            </fieldset>
+
             <button class="primary-button" type="submit" id="generateButton">Generate</button>
           </form>
 

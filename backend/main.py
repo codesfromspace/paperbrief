@@ -673,10 +673,12 @@ async def generate_batch(
     pdfs: list[UploadFile] = File(...),
     api_key: str | None = Form(default=None),
     model: str = Form(default="gpt-5.2"),
+    synthesis_mode: str = Form(default="separate"),
 ) -> dict[str, Any]:
     key = resolve_api_key(api_key)
     if not pdfs:
         raise HTTPException(status_code=400, detail="Upload at least one PDF.")
+    normalized_mode = synthesis_mode if synthesis_mode in {"separate", "synthesis"} else "separate"
 
     papers: list[dict[str, Any]] = []
     for pdf in pdfs:
@@ -693,13 +695,14 @@ async def generate_batch(
         })
 
     synthesis = None
-    if len(papers) > 1:
+    if len(papers) > 1 and normalized_mode == "synthesis":
         synthesis = call_openai_synthesis(key, model, papers)
 
     batch_id = str(uuid.uuid4())
     payload = {
         "batch_id": batch_id,
         "model": model,
+        "synthesis_mode": normalized_mode,
         "papers": papers,
         "synthesis": synthesis,
     }
