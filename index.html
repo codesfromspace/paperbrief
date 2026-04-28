@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PaperBrief</title>
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("paperbrief.theme.v1");
+        const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light");
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -19,7 +28,10 @@
           </span>
           <span>PaperBrief</span>
         </a>
-        <span class="status-pill" id="status">Waiting for PDF</span>
+        <div class="topbar-actions">
+          <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">Dark</button>
+          <span class="status-pill" id="status">Waiting for PDF</span>
+        </div>
       </header>
 
       <main class="workspace">

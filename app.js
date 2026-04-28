@@ -14,6 +14,7 @@ const pdfInput = document.querySelector("#pdfInput");
 const pdfLabel = document.querySelector("#pdfLabel");
 const pdfHelp = document.querySelector("#pdfHelp");
 const statusPill = document.querySelector("#status");
+const themeToggle = document.querySelector("#themeToggle");
 const apiStep = document.querySelector("#apiStep");
 const renderStep = document.querySelector("#renderStep");
 const generateButton = document.querySelector("#generateButton");
@@ -30,6 +31,19 @@ let currentView = "short";
 let selectedPaperIndex = 0;
 const PROFILE_STORAGE_KEY = "paperbrief.profiles.v1";
 const ACTIVE_PROFILE_KEY = "paperbrief.activeProfile.v1";
+const THEME_STORAGE_KEY = "paperbrief.theme.v1";
+
+function getCurrentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  const normalizedTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalizedTheme;
+  localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+  themeToggle.textContent = normalizedTheme === "dark" ? "Light" : "Dark";
+  themeToggle.setAttribute("aria-pressed", String(normalizedTheme === "dark"));
+}
 
 function showToast(message) {
   toast.textContent = message;
@@ -339,6 +353,9 @@ pdfInput.addEventListener("change", () => {
 });
 
 form.addEventListener("submit", generateInfographic);
+themeToggle.addEventListener("click", () => {
+  applyTheme(getCurrentTheme() === "dark" ? "light" : "dark");
+});
 profileSelect.addEventListener("change", () => {
   const profiles = readProfiles();
   const name = profileSelect.value;
@@ -402,4 +419,5 @@ pptxButton.addEventListener("click", async () => {
   }
 });
 document.querySelector("#printButton").addEventListener("click", () => window.print());
+applyTheme(getCurrentTheme());
 renderProfiles();
