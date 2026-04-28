@@ -154,6 +154,7 @@
                 <button id="fullViewButton" type="button">Full</button>
               </div>
               <button class="secondary-button" id="editButton" type="button" disabled>Edit</button>
+              <button class="secondary-button" id="snapshotButton" type="button" disabled>Add snapshot</button>
               <button class="secondary-button is-hidden" id="saveEditButton" type="button">Save</button>
               <button class="secondary-button is-hidden" id="cancelEditButton" type="button">Cancel</button>
               <button class="secondary-button" id="printButton" type="button">Export PDF</button>
@@ -198,6 +199,11 @@
               <span id="charsMeta">0 chars</span>
               <span id="normalizationMeta">No compression</span>
             </div>
+
+            <figure class="article-snapshot is-hidden" id="snapshotFigure">
+              <img id="snapshotImage" alt="First page snapshot" />
+              <figcaption id="snapshotCaption">First-page snapshot</figcaption>
+            </figure>
 
             <section class="tldr">
               <span>Thesis</span>

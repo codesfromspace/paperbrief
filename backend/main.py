@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -407,12 +408,31 @@ def extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> dict[str, Any]:
         "page_count": document.page_count,
         "char_count": len(raw_text),
     }
+    snapshot = render_first_page_snapshot(document)
     document.close()
 
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="No extractable text found. The PDF may be scanned or encrypted.")
 
-    return {"text": raw_text, "metadata": metadata}
+    return {"text": raw_text, "metadata": metadata, "snapshot": snapshot}
+
+
+def render_first_page_snapshot(document: fitz.Document) -> dict[str, Any] | None:
+    if document.page_count < 1:
+        return None
+    try:
+        page = document[0]
+        zoom = min(1.8, 900 / max(page.rect.width, 1))
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+        png_bytes = pixmap.tobytes("png")
+        return {
+            "page": 1,
+            "width": pixmap.width,
+            "height": pixmap.height,
+            "data_url": f"data:image/png;base64,{base64.b64encode(png_bytes).decode('ascii')}",
+        }
+    except Exception:
+        return None
 
 
 def build_user_input(raw_text: str, metadata: dict[str, Any], filename: str) -> str:
@@ -663,6 +683,7 @@ async def generate_claims(
     return {
         "filename": pdf.filename,
         "metadata": parsed["metadata"],
+        "snapshot": parsed.get("snapshot"),
         "model": model,
         "claims": claims,
     }
@@ -690,6 +711,7 @@ async def generate_batch(
         papers.append({
             "filename": pdf.filename,
             "metadata": parsed["metadata"],
+            "snapshot": parsed.get("snapshot"),
             "model": model,
             "claims": claims,
         })

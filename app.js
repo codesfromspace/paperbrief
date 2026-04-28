@@ -23,6 +23,7 @@ const toast = document.querySelector("#toast");
 const shortViewButton = document.querySelector("#shortViewButton");
 const fullViewButton = document.querySelector("#fullViewButton");
 const editButton = document.querySelector("#editButton");
+const snapshotButton = document.querySelector("#snapshotButton");
 const saveEditButton = document.querySelector("#saveEditButton");
 const cancelEditButton = document.querySelector("#cancelEditButton");
 const pptxButton = document.querySelector("#pptxButton");
@@ -243,6 +244,7 @@ function renderClaims(payload, view = currentView) {
   document.querySelector("#charsMeta").textContent = `${metadata.char_count.toLocaleString()} chars`;
   const notes = payload.claims._normalization_notes || [];
   document.querySelector("#normalizationMeta").textContent = notes.length ? `${notes.length} fields compressed` : "No compression";
+  renderSnapshot(payload);
 
   document.querySelector("#thesisText").textContent = claims.thesis;
   document.querySelector("#thesisText").dataset.editField = "thesis";
@@ -278,6 +280,33 @@ function renderClaims(payload, view = currentView) {
   renderStep.classList.add("is-done");
   statusPill.textContent = "Infographic ready";
   applyEditMode();
+}
+
+function renderSnapshot(payload) {
+  const figure = document.querySelector("#snapshotFigure");
+  const image = document.querySelector("#snapshotImage");
+  const caption = document.querySelector("#snapshotCaption");
+  const snapshot = payload.snapshot;
+
+  if (!snapshot?.data_url) {
+    figure.classList.add("is-hidden");
+    image.removeAttribute("src");
+    snapshotButton.disabled = true;
+    snapshotButton.textContent = "Add snapshot";
+    return;
+  }
+
+  const isVisible = Boolean(payload.snapshot_visible);
+  snapshotButton.disabled = false;
+  snapshotButton.textContent = isVisible ? "Hide snapshot" : "Add snapshot";
+  caption.textContent = `Page ${snapshot.page || 1} snapshot`;
+  figure.classList.toggle("is-hidden", !isVisible);
+
+  if (isVisible) {
+    image.src = snapshot.data_url;
+  } else {
+    image.removeAttribute("src");
+  }
 }
 
 function renderPaperTabs(batch) {
@@ -503,6 +532,12 @@ saveProfileButton.addEventListener("click", saveCurrentProfile);
 deleteProfileButton.addEventListener("click", deleteSelectedProfile);
 shortViewButton.addEventListener("click", () => setView("short"));
 fullViewButton.addEventListener("click", () => setView("full"));
+snapshotButton.addEventListener("click", () => {
+  if (!latestPayload?.snapshot?.data_url) return;
+  latestPayload.snapshot_visible = !latestPayload.snapshot_visible;
+  if (latestBatch) latestBatch.edited = true;
+  renderSnapshot(latestPayload);
+});
 paperTabs.addEventListener("click", (event) => {
   const button = event.target.closest("[data-paper-index]");
   if (!button || !latestBatch) return;
