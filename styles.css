@@ -271,6 +271,30 @@ h2 {
   font-size: 13px;
 }
 
+.model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.model-row .text-input {
+  margin-bottom: 6px;
+}
+
+.model-row button {
+  margin-top: 8px;
+  padding: 11px 12px;
+}
+
+.field-help {
+  margin: -2px 0 14px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .profile-box {
   margin-bottom: 16px;
   padding: 12px;

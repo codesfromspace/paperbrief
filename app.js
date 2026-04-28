@@ -6,6 +6,8 @@ const form = document.querySelector("#generateForm");
 const backendUrl = document.querySelector("#backendUrl");
 const apiKey = document.querySelector("#apiKey");
 const modelInput = document.querySelector("#model");
+const refreshModelsButton = document.querySelector("#refreshModelsButton");
+const modelHelp = document.querySelector("#modelHelp");
 const profileSelect = document.querySelector("#profileSelect");
 const profileName = document.querySelector("#profileName");
 const saveProfileButton = document.querySelector("#saveProfileButton");
@@ -39,6 +41,7 @@ let editBackup = null;
 const PROFILE_STORAGE_KEY = "paperbrief.profiles.v1";
 const ACTIVE_PROFILE_KEY = "paperbrief.activeProfile.v1";
 const THEME_STORAGE_KEY = "paperbrief.theme.v1";
+const DEFAULT_MODELS = ["gpt-5.2", "gpt-5.1", "gpt-5", "gpt-4.1", "gpt-4.1-mini", "o4-mini"];
 
 function getCurrentTheme() {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -85,6 +88,43 @@ function getBatchMode() {
 
 function updateBatchModeVisibility() {
   batchMode.classList.toggle("is-hidden", pdfInput.files.length < 2);
+}
+
+function setModelOptions(models, selectedModel = modelInput.value || "gpt-5.2") {
+  const uniqueModels = Array.from(new Set([selectedModel, ...models].filter(Boolean)));
+  modelInput.innerHTML = uniqueModels
+    .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+    .join("");
+  modelInput.value = selectedModel;
+}
+
+async function loadModelOptions({ silent = false } = {}) {
+  const baseUrl = backendUrl.value.trim().replace(/\/$/, "");
+  const selectedModel = modelInput.value || "gpt-5.2";
+  const enteredApiKey = apiKey.value.trim();
+
+  refreshModelsButton.disabled = true;
+  modelHelp.textContent = "Loading models from OpenAI...";
+  try {
+    const response = await fetch(`${baseUrl}/api/models`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: enteredApiKey || null }),
+    });
+    const payload = await parseApiResponse(response);
+    if (!response.ok) {
+      throw new Error(payload.detail || "Could not load model list.");
+    }
+    setModelOptions(payload.models || DEFAULT_MODELS, selectedModel);
+    modelHelp.textContent = `Loaded ${modelInput.options.length} usable models from OpenAI.`;
+    if (!silent) showToast("Model list refreshed.");
+  } catch (error) {
+    setModelOptions(DEFAULT_MODELS, selectedModel);
+    modelHelp.textContent = "Using fallback models. Add an API key and refresh for the live list.";
+    if (!silent) showToast(error.message);
+  } finally {
+    refreshModelsButton.disabled = false;
+  }
 }
 
 function asList(items) {
@@ -138,7 +178,7 @@ function writeProfiles(profiles) {
 function applyProfile(profile) {
   if (!profile) return;
   backendUrl.value = profile.backendUrl || "http://127.0.0.1:8000";
-  modelInput.value = profile.model || "gpt-5.2";
+  setModelOptions(Array.from(modelInput.options).map((option) => option.value), profile.model || "gpt-5.2");
   apiKey.value = profile.apiKey || "";
 }
 
@@ -473,7 +513,12 @@ async function generateInfographic(event) {
 
   const formData = new FormData();
   files.forEach((file) => formData.append("pdfs", file));
-  formData.append("model", modelInput.value.trim() || "gpt-5.2");
+  const selectedModel = modelInput.value || "gpt-5.2";
+  if (!selectedModel) {
+    showToast("Select a model first.");
+    return;
+  }
+  formData.append("model", selectedModel);
   formData.append("synthesis_mode", files.length > 1 ? getBatchMode() : "separate");
   const enteredApiKey = apiKey.value.trim();
   if (enteredApiKey && !enteredApiKey.startsWith("sk-")) {
@@ -533,6 +578,8 @@ pdfInput.addEventListener("change", () => {
 });
 
 form.addEventListener("submit", generateInfographic);
+refreshModelsButton.addEventListener("click", () => loadModelOptions());
+apiKey.addEventListener("change", () => loadModelOptions({ silent: true }));
 themeToggle.addEventListener("click", () => {
   applyTheme(getCurrentTheme() === "dark" ? "light" : "dark");
 });
@@ -547,6 +594,7 @@ profileSelect.addEventListener("change", () => {
   profileName.value = name;
   applyProfile(profiles[name]);
   localStorage.setItem(ACTIVE_PROFILE_KEY, name);
+  loadModelOptions({ silent: true });
   showToast(`Profile "${name}" loaded.`);
 });
 saveProfileButton.addEventListener("click", saveCurrentProfile);
@@ -635,3 +683,5 @@ document.querySelector("#printButton").addEventListener("click", () => {
 applyTheme(getCurrentTheme());
 renderProfiles();
 updateBatchModeVisibility();
+setModelOptions(DEFAULT_MODELS, modelInput.value || "gpt-5.2");
+loadModelOptions({ silent: true });

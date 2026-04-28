@@ -79,7 +79,13 @@
             />
 
             <label class="field-label" for="model">Model</label>
-            <input id="model" class="text-input" value="gpt-5.2" />
+            <div class="model-row">
+              <select id="model" class="text-input">
+                <option value="gpt-5.2">gpt-5.2</option>
+              </select>
+              <button class="secondary-button" id="refreshModelsButton" type="button">Refresh</button>
+            </div>
+            <p class="field-help" id="modelHelp">Models load from OpenAI when an API key is available.</p>
 
             <label class="dropzone" id="dropzone">
               <input id="pdfInput" type="file" accept="application/pdf,.pdf" multiple required />

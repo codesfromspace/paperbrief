@@ -265,6 +265,7 @@ TITLE_LOOKUP_SCHEMA: dict[str, Any] = {
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BATCH_STORE: dict[str, dict[str, Any]] = {}
+DEFAULT_MODEL_OPTIONS = ["gpt-5.2", "gpt-5.1", "gpt-5", "gpt-4.1", "gpt-4.1-mini", "o4-mini"]
 
 app = FastAPI(title="PaperBrief API")
 app.add_middleware(
@@ -537,6 +538,55 @@ def resolve_api_key(api_key: str | None) -> str:
     if not key.startswith("sk-"):
         raise HTTPException(status_code=401, detail="OpenAI API key looks invalid. It should start with sk-.")
     return key
+
+
+def is_usable_generation_model(model_id: str) -> bool:
+    if not model_id.startswith(("gpt-", "o")):
+        return False
+    excluded = [
+        "audio",
+        "embedding",
+        "image",
+        "realtime",
+        "search",
+        "speech",
+        "tts",
+        "transcribe",
+        "whisper",
+    ]
+    return not any(token in model_id for token in excluded)
+
+
+def sort_model_ids(model_id: str) -> tuple[int, str]:
+    if model_id in DEFAULT_MODEL_OPTIONS:
+        return (DEFAULT_MODEL_OPTIONS.index(model_id), model_id)
+    if model_id.startswith("gpt-5"):
+        return (20, model_id)
+    if model_id.startswith("gpt-4"):
+        return (30, model_id)
+    if model_id.startswith("o"):
+        return (40, model_id)
+    return (90, model_id)
+
+
+@app.post("/api/models")
+def list_openai_models(api_key: str | None = Body(default=None, embed=True)) -> dict[str, Any]:
+    key = resolve_api_key(api_key)
+    client = OpenAI(api_key=key)
+    try:
+        response = client.models.list()
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail="OpenAI rejected the API key. Paste a valid key or set OPENAI_API_KEY.") from exc
+    except OpenAIError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not load OpenAI models: {exc}") from exc
+
+    model_ids = sorted(
+        {model.id for model in response.data if is_usable_generation_model(model.id)},
+        key=sort_model_ids,
+    )
+    if not model_ids:
+        model_ids = DEFAULT_MODEL_OPTIONS
+    return {"models": model_ids}
 
 
 def call_openai(api_key: str, model: str, user_input: str) -> dict[str, Any]:
