@@ -210,6 +210,26 @@ SYNTHESIS_SCHEMA: dict[str, Any] = {
     },
 }
 
+TITLE_LOOKUP_PROMPT = """You resolve scientific article titles from DOI identifiers.
+
+Use web search when available.
+Return the exact article title matching the DOI.
+Do not return PDF filenames, journal section labels, publisher IDs, or guessed titles.
+If the title cannot be verified from the DOI, return an empty title and low confidence.
+"""
+
+TITLE_LOOKUP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["doi", "title", "confidence", "source_url"],
+    "properties": {
+        "doi": {"type": "string"},
+        "title": {"type": "string"},
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "source_url": {"type": "string"},
+    },
+}
+
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BATCH_STORE: dict[str, dict[str, Any]] = {}
@@ -248,6 +268,13 @@ def health() -> dict[str, str]:
 def clean_pdf_line(line: str) -> str:
     clean = re.sub(r"\s+", " ", line).strip()
     return clean.strip(" -•·")
+
+
+def extract_doi(text: str) -> str:
+    match = re.search(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", text, re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(0).rstrip(".,;:)])}>").lower()
 
 
 def looks_like_internal_title(title: str, filename: str) -> bool:
@@ -401,8 +428,12 @@ def extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> dict[str, Any]:
     pdf_title = pdf_metadata.get("title") or ""
     first_page_text = pages[0]["text"] if pages else ""
     layout_title = infer_layout_title(document[0], filename) if document.page_count else ""
+    fallback_title = layout_title or infer_article_title(first_page_text, pdf_title, filename)
     metadata = {
-        "title": layout_title or infer_article_title(first_page_text, pdf_title, filename),
+        "title": fallback_title,
+        "fallback_title": fallback_title,
+        "title_source": "pdf_fallback" if fallback_title else "not_detected",
+        "doi": extract_doi(raw_text),
         "pdf_metadata_title": pdf_title,
         "author": pdf_metadata.get("author") or "",
         "page_count": document.page_count,
@@ -455,6 +486,7 @@ Additional instructions:
 PDF metadata:
 - filename: {filename}
 - title: {metadata.get("title") or "not detected"}
+- doi: {metadata.get("doi") or "not detected"}
 - author: {metadata.get("author") or "not detected"}
 - pages: {metadata.get("page_count")}
 
@@ -501,6 +533,66 @@ def call_openai(api_key: str, model: str, user_input: str) -> dict[str, Any]:
     validate_claims(claims)
     claims["_normalization_notes"] = normalization_notes
     return claims
+
+
+def call_openai_title_lookup(api_key: str, model: str, metadata: dict[str, Any], filename: str) -> dict[str, Any] | None:
+    doi = (metadata.get("doi") or "").strip()
+    if not doi:
+        return None
+
+    client = OpenAI(api_key=api_key)
+    lookup_input = {
+        "doi": doi,
+        "filename": filename,
+        "pdf_fallback_title": metadata.get("fallback_title") or metadata.get("title") or "",
+        "pdf_metadata_title": metadata.get("pdf_metadata_title") or "",
+    }
+    try:
+        response = client.responses.create(
+            model=model,
+            instructions=TITLE_LOOKUP_PROMPT,
+            input=json.dumps(lookup_input),
+            tools=[{"type": "web_search_preview"}],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "doi_title_lookup",
+                    "strict": True,
+                    "schema": TITLE_LOOKUP_SCHEMA,
+                }
+            },
+        )
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail="OpenAI rejected the API key. Paste a valid key or set OPENAI_API_KEY.") from exc
+    except OpenAIError:
+        return None
+
+    try:
+        result = json.loads(response.output_text)
+    except Exception:
+        return None
+
+    title = clean_pdf_line(result.get("title", ""))
+    if not title or result.get("confidence") == "low" or title_candidate_is_noise(title, filename):
+        return None
+    result["title"] = title.rstrip(".")
+    return result
+
+
+def resolve_title_with_openai(api_key: str, model: str, parsed: dict[str, Any], filename: str) -> None:
+    metadata = parsed["metadata"]
+    if not metadata.get("doi"):
+        return
+
+    lookup = call_openai_title_lookup(api_key, model, metadata, filename)
+    if not lookup:
+        metadata["title_source"] = "pdf_fallback_after_doi_lookup"
+        return
+
+    metadata["title"] = lookup["title"]
+    metadata["title_source"] = "openai_doi_lookup"
+    metadata["title_lookup_confidence"] = lookup.get("confidence", "")
+    metadata["title_lookup_source_url"] = lookup.get("source_url", "")
 
 
 def call_openai_synthesis(api_key: str, model: str, papers: list[dict[str, Any]]) -> dict[str, Any]:
@@ -677,6 +769,7 @@ async def generate_claims(
 
     pdf_bytes = await pdf.read()
     parsed = extract_pdf_text(pdf_bytes, pdf.filename)
+    resolve_title_with_openai(key, model, parsed, pdf.filename)
     user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
     claims = call_openai(key, model, user_input)
 
@@ -706,6 +799,7 @@ async def generate_batch(
         if not pdf.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF.")
         parsed = extract_pdf_text(await pdf.read(), pdf.filename)
+        resolve_title_with_openai(key, model, parsed, pdf.filename)
         user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
         claims = call_openai(key, model, user_input)
         papers.append({
