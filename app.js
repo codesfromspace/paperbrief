@@ -1,3 +1,7 @@
+if (window.location.protocol === "file:") {
+  window.location.replace("http://127.0.0.1:8000/");
+}
+
 const form = document.querySelector("#generateForm");
 const backendUrl = document.querySelector("#backendUrl");
 const apiKey = document.querySelector("#apiKey");
@@ -92,16 +96,17 @@ function applyProfile(profile) {
 function renderProfiles(selectedName = localStorage.getItem(ACTIVE_PROFILE_KEY) || "") {
   const profiles = readProfiles();
   const names = Object.keys(profiles).sort((a, b) => a.localeCompare(b));
+  const effectiveSelection = selectedName || (names.length === 1 ? names[0] : "");
   profileSelect.innerHTML = [
     `<option value="">No saved profile</option>`,
     ...names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
   ].join("");
 
-  if (selectedName && profiles[selectedName]) {
-    profileSelect.value = selectedName;
-    profileName.value = selectedName;
-    applyProfile(profiles[selectedName]);
-    localStorage.setItem(ACTIVE_PROFILE_KEY, selectedName);
+  if (effectiveSelection && profiles[effectiveSelection]) {
+    profileSelect.value = effectiveSelection;
+    profileName.value = effectiveSelection;
+    applyProfile(profiles[effectiveSelection]);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, effectiveSelection);
   } else {
     profileSelect.value = "";
     localStorage.removeItem(ACTIVE_PROFILE_KEY);
