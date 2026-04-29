@@ -91,11 +91,12 @@ function updateBatchModeVisibility() {
 }
 
 function setModelOptions(models, selectedModel = modelInput.value || "gpt-5.2") {
-  const uniqueModels = Array.from(new Set([selectedModel, ...models].filter(Boolean)));
+  const uniqueModels = Array.from(new Set((models.length ? models : DEFAULT_MODELS).filter(Boolean)));
+  const effectiveSelection = uniqueModels.includes(selectedModel) ? selectedModel : uniqueModels[0] || "gpt-5.2";
   modelInput.innerHTML = uniqueModels
     .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
     .join("");
-  modelInput.value = selectedModel;
+  modelInput.value = effectiveSelection;
 }
 
 async function loadModelOptions({ silent = false } = {}) {

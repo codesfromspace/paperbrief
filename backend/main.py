@@ -575,8 +575,11 @@ def is_usable_generation_model(model_id: str) -> bool:
         return False
     excluded = [
         "audio",
+        "chat",
+        "codex",
         "embedding",
         "image",
+        "pro",
         "realtime",
         "search",
         "speech",
@@ -584,7 +587,13 @@ def is_usable_generation_model(model_id: str) -> bool:
         "transcribe",
         "whisper",
     ]
-    return not any(token in model_id for token in excluded)
+    if any(token in model_id for token in excluded):
+        return False
+    if model_id.startswith("gpt-5"):
+        return True
+    if model_id.startswith(("gpt-4.1", "o4")):
+        return True
+    return False
 
 
 def sort_model_ids(model_id: str) -> tuple[int, str]:
