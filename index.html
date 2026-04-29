@@ -207,6 +207,21 @@
               <span id="normalizationMeta">No compression</span>
             </div>
 
+            <section class="doi-context is-hidden" id="doiContext">
+              <div class="doi-context-header">
+                <span>DOI context</span>
+                <small id="doiContextStatus">Not checked</small>
+              </div>
+              <div class="doi-signal-grid">
+                <div><span>Type</span><strong id="articleTypeSignal">Not found</strong></div>
+                <div><span>Access</span><strong id="accessSignal">Not found</strong></div>
+                <div><span>Attention</span><strong id="citationSignal">Not found</strong></div>
+                <div><span>Data/code</span><strong id="dataCodeSignal">Not found</strong></div>
+              </div>
+              <p id="externalContextSignal">Not found</p>
+              <ul id="reuseHooks"></ul>
+            </section>
+
             <figure class="article-snapshot is-hidden" id="snapshotFigure">
               <img id="snapshotImage" alt="First page snapshot" />
               <figcaption id="snapshotCaption">First-page snapshot</figcaption>

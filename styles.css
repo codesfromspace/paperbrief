@@ -756,6 +756,90 @@ h2 {
   text-transform: uppercase;
 }
 
+.doi-context {
+  margin: 14px 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 14px;
+}
+
+.doi-context.is-hidden {
+  display: none;
+}
+
+.doi-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.doi-context-header span {
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.doi-context-header small {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.doi-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.doi-signal-grid div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 9px;
+}
+
+.doi-signal-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.doi-signal-grid strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.doi-context p {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.doi-context ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.doi-context li {
+  margin-top: 5px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .type-badge {
   align-self: start;
   border-radius: 999px;
@@ -1119,6 +1203,7 @@ input:focus-visible {
   .finding-list,
   .evidence-list,
   .claim-stack,
+  .doi-signal-grid,
   .synthesis-grid {
     grid-template-columns: 1fr;
   }

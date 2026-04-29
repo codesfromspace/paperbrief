@@ -216,6 +216,13 @@ Use web search when available.
 Return the exact article title matching the DOI.
 Return the journal name.
 Find one commonly reported journal-level metric when available, preferring Journal Impact Factor, CiteScore, SJR, or journal quartile.
+Also find compact DOI-level context signals useful for an infographic:
+- article type
+- open access or paywall status
+- citation or attention signal
+- data/code availability
+- funding, trial registration, preprint, or notable external context when available
+- 2 to 4 concise reuse hooks explaining what makes the article useful to inspect
 Assign an interest tier from the metric only:
 - very_high: top-tier metric, usually Q1 or unusually high field-adjusted value
 - high: strong journal metric
@@ -228,7 +235,7 @@ If a field cannot be verified, return "not found" and low confidence.
 TITLE_LOOKUP_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["doi", "title", "journal", "confidence", "source_url", "journal_metric"],
+    "required": ["doi", "title", "journal", "confidence", "source_url", "journal_metric", "article_signals"],
     "properties": {
         "doi": {"type": "string"},
         "title": {"type": "string"},
@@ -257,6 +264,28 @@ TITLE_LOOKUP_SCHEMA: dict[str, Any] = {
                 "interest_tier": {"type": "string", "enum": ["low", "moderate", "high", "very_high"]},
                 "rationale": {"type": "string"},
                 "source_url": {"type": "string"},
+            },
+        },
+        "article_signals": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "article_type",
+                "access_status",
+                "citation_signal",
+                "data_code_signal",
+                "external_context",
+                "reuse_hooks",
+                "source_urls",
+            ],
+            "properties": {
+                "article_type": {"type": "string"},
+                "access_status": {"type": "string"},
+                "citation_signal": {"type": "string"},
+                "data_code_signal": {"type": "string"},
+                "external_context": {"type": "string"},
+                "reuse_hooks": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 4},
+                "source_urls": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
             },
         },
     },
@@ -469,6 +498,7 @@ def extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> dict[str, Any]:
         "doi": extract_doi(raw_text),
         "journal": "",
         "journal_metric": normalize_journal_metric(None),
+        "article_signals": normalize_article_signals(None),
         "pdf_metadata_title": pdf_title,
         "author": pdf_metadata.get("author") or "",
         "page_count": document.page_count,
@@ -683,6 +713,7 @@ def resolve_title_with_openai(api_key: str, model: str, parsed: dict[str, Any], 
         metadata["title_source"] = "pdf_fallback_after_doi_lookup"
     metadata["journal"] = lookup.get("journal", "")
     metadata["journal_metric"] = normalize_journal_metric(lookup.get("journal_metric"))
+    metadata["article_signals"] = normalize_article_signals(lookup.get("article_signals"))
 
 
 def normalize_journal_metric(metric: Any) -> dict[str, Any]:
@@ -702,6 +733,38 @@ def normalize_journal_metric(metric: Any) -> dict[str, Any]:
         "interest_tier": tier,
         "rationale": clean_pdf_line(str(metric.get("rationale") or "Metric unavailable or unverified")),
         "source_url": clean_pdf_line(str(metric.get("source_url") or "")),
+    }
+
+
+def normalize_article_signals(signals: Any) -> dict[str, Any]:
+    if not isinstance(signals, dict):
+        signals = {}
+    hooks = signals.get("reuse_hooks")
+    if not isinstance(hooks, list):
+        hooks = []
+    clean_hooks = [
+        clean_pdf_line(str(item))
+        for item in hooks
+        if clean_pdf_line(str(item)) and clean_pdf_line(str(item)).lower() != "not found"
+    ][:4]
+
+    source_urls = signals.get("source_urls")
+    if not isinstance(source_urls, list):
+        source_urls = []
+    clean_urls = [
+        clean_pdf_line(str(url))
+        for url in source_urls
+        if clean_pdf_line(str(url)) and clean_pdf_line(str(url)).lower() != "not found"
+    ][:4]
+
+    return {
+        "article_type": clean_pdf_line(str(signals.get("article_type") or "not found")),
+        "access_status": clean_pdf_line(str(signals.get("access_status") or "not found")),
+        "citation_signal": clean_pdf_line(str(signals.get("citation_signal") or "not found")),
+        "data_code_signal": clean_pdf_line(str(signals.get("data_code_signal") or "not found")),
+        "external_context": clean_pdf_line(str(signals.get("external_context") or "not found")),
+        "reuse_hooks": clean_hooks,
+        "source_urls": clean_urls,
     }
 
 

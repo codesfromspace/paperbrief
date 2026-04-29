@@ -288,6 +288,7 @@ function renderClaims(payload, view = currentView) {
   const notes = payload.claims._normalization_notes || [];
   document.querySelector("#normalizationMeta").textContent = notes.length ? `${notes.length} fields compressed` : "No compression";
   renderJournalMetric(metadata);
+  renderDoiContext(metadata);
   renderSnapshot(payload);
 
   document.querySelector("#thesisText").textContent = claims.thesis;
@@ -341,6 +342,30 @@ function renderJournalMetric(metadata) {
   badge.className = `metric-badge metric-${tier}`;
   badge.textContent = `${journal}: ${metricName}${metricValue ? ` ${metricValue}` : ""}${quartile}${score}`;
   badge.title = metric.rationale || "Journal-level metric from DOI lookup";
+}
+
+function renderDoiContext(metadata) {
+  const panel = document.querySelector("#doiContext");
+  const signals = metadata.article_signals || {};
+  const hooks = Array.isArray(signals.reuse_hooks) ? signals.reuse_hooks.filter(Boolean) : [];
+  const hasContext = Boolean(metadata.doi) && (
+    hooks.length > 0 ||
+    ["article_type", "access_status", "citation_signal", "data_code_signal", "external_context"]
+      .some((key) => signals[key] && signals[key] !== "not found")
+  );
+
+  panel.classList.toggle("is-hidden", !hasContext);
+  if (!hasContext) return;
+
+  document.querySelector("#doiContextStatus").textContent = metadata.doi;
+  document.querySelector("#articleTypeSignal").textContent = signals.article_type || "Not found";
+  document.querySelector("#accessSignal").textContent = signals.access_status || "Not found";
+  document.querySelector("#citationSignal").textContent = signals.citation_signal || "Not found";
+  document.querySelector("#dataCodeSignal").textContent = signals.data_code_signal || "Not found";
+  document.querySelector("#externalContextSignal").textContent = signals.external_context || "Not found";
+  document.querySelector("#reuseHooks").innerHTML = hooks
+    .map((hook) => `<li>${escapeHtml(String(hook))}</li>`)
+    .join("");
 }
 
 function renderSnapshot(payload) {
