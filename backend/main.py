@@ -71,7 +71,18 @@ Output format:
     "mechanism": "",
     "boundary_conditions": [],
     "generalizable_insight": ""
-  }
+  },
+  "claim_confidence": {
+    "main_thesis": "supported",
+    "mechanism": "hypothesis",
+    "core_evidence": ["supported", "supported", "supported", "supported"]
+  },
+  "evidence_traceability": [
+    {"claim_index": 1, "pages": [1], "support": "Short paraphrase of supporting evidence"},
+    {"claim_index": 2, "pages": [2], "support": "Short paraphrase of supporting evidence"},
+    {"claim_index": 3, "pages": [3], "support": "Short paraphrase of supporting evidence"},
+    {"claim_index": 4, "pages": [4], "support": "Short paraphrase of supporting evidence"}
+  ]
 }
 
 After generating scientific claims, compress them for infographic display.
@@ -92,6 +103,7 @@ No semicolons.
 No parenthetical overload.
 Prefer short causal sentences.
 Renderers will display only infographic_claims by default.
+Every evidence card must have traceability to page markers when possible.
 """
 
 
@@ -179,11 +191,74 @@ INFOGRAPHIC_CLAIMS_SCHEMA: dict[str, Any] = {
 CLAIMS_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["full_structured_claims", "infographic_claims"],
+    "required": ["full_structured_claims", "infographic_claims", "claim_confidence", "evidence_traceability"],
     "properties": {
         "full_structured_claims": FULL_CLAIMS_SCHEMA,
         "infographic_claims": INFOGRAPHIC_CLAIMS_SCHEMA,
+        "claim_confidence": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["main_thesis", "mechanism", "core_evidence"],
+            "properties": {
+                "main_thesis": {"type": "string", "enum": ["strong", "supported", "speculative"]},
+                "mechanism": {"type": "string", "enum": ["strong", "supported", "hypothesis", "speculative"]},
+                "core_evidence": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["strong", "supported", "speculative"]},
+                    "minItems": 4,
+                    "maxItems": 4,
+                },
+            },
+        },
+        "evidence_traceability": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["claim_index", "pages", "support"],
+                "properties": {
+                    "claim_index": {"type": "integer", "minimum": 1, "maximum": 4},
+                    "pages": {"type": "array", "items": {"type": "integer"}, "minItems": 1, "maxItems": 4},
+                    "support": {"type": "string"},
+                },
+            },
+            "minItems": 4,
+            "maxItems": 4,
+        },
     },
+}
+
+QUALITY_CHECK_PROMPT = """You are a scientific claim critic.
+
+Check whether the infographic claims are paper-specific, mechanistic, and supported by the supplied page-marked PDF text.
+Do not rewrite the whole brief. Return compact JSON.
+Flag generic, unsupported, or overconfident statements.
+"""
+
+QUALITY_CHECK_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["status", "risk_level", "issues", "recommended_fixes"],
+    "properties": {
+        "status": {"type": "string", "enum": ["pass", "review", "fail"]},
+        "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+        "issues": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+        "recommended_fixes": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+    },
+}
+
+REGENERATE_PROMPT = """You rewrite one section of a scientific infographic.
+
+Use only the supplied structured claims and metadata.
+Keep it concise, mechanistic, paper-specific, and non-generic.
+Return JSON with exactly one field: value.
+"""
+
+REGENERATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["value"],
+    "properties": {"value": {"type": "string"}},
 }
 
 SYNTHESIS_PROMPT = """You are a cross-paper synthesis engine.
@@ -531,12 +606,30 @@ def render_first_page_snapshot(document: fitz.Document) -> dict[str, Any] | None
         return None
 
 
-def build_user_input(raw_text: str, metadata: dict[str, Any], filename: str) -> str:
+TEMPLATE_PRESETS = {
+    "scientific_claims": "Default: extract compressed causal scientific claims.",
+    "clinical_relevance": "Emphasize clinical relevance, diagnosis, intervention, patient stratification, and translational limits.",
+    "journal_club": "Emphasize study design, interpretation risks, discussion questions, and what a journal club should debate.",
+    "grant_research_idea": "Emphasize research gaps, next experiments, and grant-worthy mechanistic questions.",
+    "ai_systems_analogy": "Emphasize abstract mechanisms and analogies to AI, neural networks, and complex systems.",
+}
+
+
+def build_user_input(
+    raw_text: str,
+    metadata: dict[str, Any],
+    filename: str,
+    template_preset: str = "scientific_claims",
+    custom_instructions: str = "",
+) -> str:
     max_chars = 120_000
     clipped_text = raw_text[:max_chars]
     clipping_note = ""
     if len(raw_text) > max_chars:
         clipping_note = f"\n\n[NOTE: PDF text was clipped from {len(raw_text)} to {max_chars} characters.]"
+
+    preset = TEMPLATE_PRESETS.get(template_preset, TEMPLATE_PRESETS["scientific_claims"])
+    custom = clean_pdf_line(custom_instructions)[:1200]
 
     return f"""Extract structured scientific claims from this paper.
 
@@ -547,6 +640,10 @@ Additional instructions:
 - include a generalizable insight
 - do not copy paper sentences verbatim
 - reject generic background claims
+- produce claim confidence and evidence traceability
+- use page markers like [PAGE 3] for evidence_traceability pages
+- template preset: {preset}
+- user instruction profile: {custom or "none"}
 
 PDF metadata:
 - filename: {filename}
@@ -653,10 +750,76 @@ def call_openai(api_key: str, model: str, user_input: str) -> dict[str, Any]:
         claims = json.loads(response.output_text)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Model did not return valid JSON: {exc}") from exc
+    normalize_confidence_and_traceability(claims)
     normalization_notes = normalize_infographic_claims(claims)
     validate_claims(claims)
     claims["_normalization_notes"] = normalization_notes
     return claims
+
+
+def call_openai_quality_check(api_key: str, model: str, raw_text: str, claims: dict[str, Any]) -> dict[str, Any]:
+    client = OpenAI(api_key=api_key)
+    quality_input = {
+        "pdf_text": raw_text[:80_000],
+        "claims": claims,
+    }
+    try:
+        response = client.responses.create(
+            model=model,
+            instructions=QUALITY_CHECK_PROMPT,
+            input=json.dumps(quality_input),
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "claim_quality_check",
+                    "strict": True,
+                    "schema": QUALITY_CHECK_SCHEMA,
+                }
+            },
+        )
+        return json.loads(response.output_text)
+    except (OpenAIError, Exception):
+        return {
+            "status": "review",
+            "risk_level": "medium",
+            "issues": ["Automated quality check unavailable"],
+            "recommended_fixes": ["Manually verify claims against the PDF"],
+        }
+
+
+def normalize_confidence_and_traceability(claims: dict[str, Any]) -> None:
+    confidence = claims.get("claim_confidence")
+    if not isinstance(confidence, dict):
+        confidence = {}
+    core_confidence = confidence.get("core_evidence")
+    if not isinstance(core_confidence, list):
+        core_confidence = []
+    allowed_core = {"strong", "supported", "speculative"}
+    allowed_mechanism = {"strong", "supported", "hypothesis", "speculative"}
+    claims["claim_confidence"] = {
+        "main_thesis": confidence.get("main_thesis") if confidence.get("main_thesis") in allowed_core else "supported",
+        "mechanism": confidence.get("mechanism") if confidence.get("mechanism") in allowed_mechanism else "hypothesis",
+        "core_evidence": [
+            item if item in allowed_core else "supported"
+            for item in (core_confidence + ["supported", "supported", "supported", "supported"])[:4]
+        ],
+    }
+
+    traceability = claims.get("evidence_traceability")
+    if not isinstance(traceability, list):
+        traceability = []
+    normalized_trace = []
+    for index in range(1, 5):
+        item = next((entry for entry in traceability if isinstance(entry, dict) and entry.get("claim_index") == index), {})
+        pages = item.get("pages") if isinstance(item, dict) else []
+        if not isinstance(pages, list) or not pages:
+            pages = [1]
+        normalized_trace.append({
+            "claim_index": index,
+            "pages": [int(page) for page in pages[:4] if str(page).isdigit()] or [1],
+            "support": clean_pdf_line(str(item.get("support") or "Support should be verified against the PDF"))[:180],
+        })
+    claims["evidence_traceability"] = normalized_trace
 
 
 def call_openai_title_lookup(api_key: str, model: str, metadata: dict[str, Any], filename: str) -> dict[str, Any] | None:
@@ -943,6 +1106,8 @@ async def generate_claims(
     pdf: UploadFile = File(...),
     api_key: str | None = Form(default=None),
     model: str = Form(default="gpt-5.2"),
+    template_preset: str = Form(default="scientific_claims"),
+    custom_instructions: str = Form(default=""),
 ) -> dict[str, Any]:
     key = resolve_api_key(api_key)
 
@@ -952,8 +1117,9 @@ async def generate_claims(
     pdf_bytes = await pdf.read()
     parsed = extract_pdf_text(pdf_bytes, pdf.filename)
     resolve_title_with_openai(key, model, parsed, pdf.filename)
-    user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
+    user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename, template_preset, custom_instructions)
     claims = call_openai(key, model, user_input)
+    claims["quality_check"] = call_openai_quality_check(key, model, parsed["text"], claims)
 
     return {
         "filename": pdf.filename,
@@ -970,6 +1136,8 @@ async def generate_batch(
     api_key: str | None = Form(default=None),
     model: str = Form(default="gpt-5.2"),
     synthesis_mode: str = Form(default="separate"),
+    template_preset: str = Form(default="scientific_claims"),
+    custom_instructions: str = Form(default=""),
 ) -> dict[str, Any]:
     key = resolve_api_key(api_key)
     if not pdfs:
@@ -982,8 +1150,9 @@ async def generate_batch(
             raise HTTPException(status_code=400, detail=f"{pdf.filename} is not a PDF.")
         parsed = extract_pdf_text(await pdf.read(), pdf.filename)
         resolve_title_with_openai(key, model, parsed, pdf.filename)
-        user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename)
+        user_input = build_user_input(parsed["text"], parsed["metadata"], pdf.filename, template_preset, custom_instructions)
         claims = call_openai(key, model, user_input)
+        claims["quality_check"] = call_openai_quality_check(key, model, parsed["text"], claims)
         papers.append({
             "filename": pdf.filename,
             "metadata": parsed["metadata"],
@@ -1003,9 +1172,46 @@ async def generate_batch(
         "synthesis_mode": normalized_mode,
         "papers": papers,
         "synthesis": synthesis,
+        "template_preset": template_preset,
     }
     BATCH_STORE[batch_id] = payload
     return payload
+
+
+@app.post("/api/regenerate-section")
+def regenerate_section(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    key = resolve_api_key(payload.get("api_key"))
+    model = payload.get("model") or "gpt-5.2"
+    section = payload.get("section") or "thesis"
+    paper = payload.get("paper") or {}
+    style = clean_pdf_line(str(payload.get("style") or ""))[:500]
+    client = OpenAI(api_key=key)
+    request = {
+        "section": section,
+        "style": style or "Improve clarity and specificity",
+        "metadata": paper.get("metadata", {}),
+        "claims": paper.get("claims", {}),
+    }
+    try:
+        response = client.responses.create(
+            model=model,
+            instructions=REGENERATE_PROMPT,
+            input=json.dumps(request),
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "regenerated_section",
+                    "strict": True,
+                    "schema": REGENERATE_SCHEMA,
+                }
+            },
+        )
+        value = json.loads(response.output_text).get("value", "")
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail="OpenAI rejected the API key. Paste a valid key or set OPENAI_API_KEY.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Section regeneration failed: {exc}") from exc
+    return {"section": section, "value": limit_words(value, 35)}
 
 
 def add_textbox(slide, left, top, width, height, text, size=18, bold=False, color=RGBColor(29, 36, 35)):

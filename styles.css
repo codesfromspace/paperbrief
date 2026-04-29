@@ -271,11 +271,55 @@ h2 {
   font-size: 13px;
 }
 
+.prompt-profile {
+  min-height: 82px;
+  resize: vertical;
+  line-height: 1.35;
+}
+
 .model-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
+}
+
+.comparison-panel {
+  max-width: 1120px;
+  margin: 0 auto 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.comparison-panel.is-hidden {
+  display: none;
+}
+
+.comparison-table-wrap {
+  overflow-x: auto;
+}
+
+.comparison-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.comparison-panel th,
+.comparison-panel td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.comparison-panel th {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .model-row .text-input {
@@ -906,6 +950,78 @@ h2 {
   padding: 16px;
 }
 
+.controls-panel {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 14px 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 12px;
+}
+
+.controls-panel.is-hidden {
+  display: none;
+}
+
+.controls-panel .text-input {
+  margin-bottom: 0;
+}
+
+.trace-panel,
+.quality-panel {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.trace-panel.is-hidden,
+.quality-panel.is-hidden {
+  display: none;
+}
+
+.trace-list,
+.confidence-list {
+  display: grid;
+  gap: 8px;
+}
+
+.trace-item,
+.confidence-list span,
+.quality-panel li,
+.quality-panel p {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 9px;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.trace-item span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--teal);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.trace-item p {
+  margin: 0;
+}
+
+.quality-panel ul {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-left: 0;
+  list-style: none;
+}
+
 .tldr span {
   color: var(--amber);
   font-weight: 900;
@@ -1203,6 +1319,7 @@ input:focus-visible {
   .finding-list,
   .evidence-list,
   .claim-stack,
+  .controls-panel,
   .doi-signal-grid,
   .synthesis-grid {
     grid-template-columns: 1fr;
