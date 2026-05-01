@@ -599,12 +599,27 @@ h2 {
 
 .stage-toolbar {
   justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 18px;
   margin-bottom: 14px;
 }
 
+.stage-toolbar > div:first-child {
+  min-width: min(100%, 260px);
+}
+
 .toolbar-actions {
+  flex: 1 1 360px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
+  min-width: 0;
+}
+
+.toolbar-actions > button,
+.toolbar-actions .segmented {
+  flex: 0 1 auto;
 }
 
 .export-status {
@@ -1308,10 +1323,23 @@ input:focus-visible {
 
   .topbar,
   .stage-toolbar,
-  .toolbar-actions,
   .brief-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .toolbar-actions > button,
+  .toolbar-actions .segmented {
+    flex: 1 1 150px;
+  }
+
+  .toolbar-actions > button {
+    white-space: normal;
   }
 
   .workspace,
