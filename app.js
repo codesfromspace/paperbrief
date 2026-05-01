@@ -341,6 +341,22 @@ function renderClaims(payload, view = currentView) {
   document.querySelector("#postControls").classList.remove("is-hidden");
   citationButton.disabled = false;
   applyEditMode();
+  fitBriefToA4();
+}
+
+function fitBriefToA4() {
+  window.requestAnimationFrame(() => {
+    const card = document.querySelector("#briefCard");
+    card.dataset.density = "normal";
+    const a4HeightPx = 1122;
+    if (card.scrollHeight > a4HeightPx) {
+      card.dataset.density = "compact";
+    }
+    if (card.scrollHeight > a4HeightPx) {
+      card.dataset.density = "dense";
+    }
+    statusPill.textContent = card.dataset.density === "normal" ? "A4 ready" : `A4 ${card.dataset.density}`;
+  });
 }
 
 function renderTraceability(payload) {

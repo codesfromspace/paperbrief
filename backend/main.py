@@ -28,11 +28,16 @@ Rules:
 - Always infer the mechanism if not explicit
 - Prefer specific, mechanistic, causal claims
 - Empty fields are forbidden
+- Every claim must include paper-specific nouns: population/model, manipulation/condition, measured variable, or mechanism.
+- If a sentence could fit many papers, rewrite it until it is specific to this paper.
+- Reject vague verbs like "affects", "influences", "is associated with", or "may help" unless paired with a concrete measured effect.
+- Prefer named variables, task names, cell types, brain regions, biomarkers, interventions, datasets, or parameters from the paper.
 
 If unclear:
 → infer the most likely scientific interpretation
 
 Reject generic outputs.
+The final infographic must fit on one A4 page. Compress aggressively before adding detail.
 
 Output format:
 
@@ -87,16 +92,16 @@ Output format:
 
 After generating scientific claims, compress them for infographic display.
 
-Hard limits for infographic_claims:
-- Thesis: max 28 words
-- Why it matters: max 3 bullets, each max 14 words
+Hard limits for infographic_claims, optimized for one A4 page:
+- Thesis: max 24 words
+- Why it matters: max 3 bullets, each max 11 words
 - Study design fields: max 12 words each
 - Core evidence: exactly 4 cards
 - Each evidence card title: max 4 words
-- Each evidence card claim: max 22 words
-- Mechanism: max 35 words
-- Boundary conditions: max 3 bullets, each max 16 words
-- Generalizable insight: max 28 words
+- Each evidence card claim: max 18 words
+- Mechanism: max 28 words
+- Boundary conditions: max 3 bullets, each max 12 words
+- Generalizable insight: max 22 words
 
 No paragraphs inside cards.
 No semicolons.
@@ -104,6 +109,7 @@ No parenthetical overload.
 Prefer short causal sentences.
 Renderers will display only infographic_claims by default.
 Every evidence card must have traceability to page markers when possible.
+Do not fill space. Short, specific, and mechanistic beats complete but generic.
 """
 
 
@@ -1014,9 +1020,9 @@ def normalize_infographic_claims(claims: dict[str, Any]) -> list[str]:
             notes.append(f"{label} compressed")
         return normalized or "Not specified"
 
-    infographic["thesis"] = normalize_text("thesis", infographic.get("thesis", ""), 28)
+    infographic["thesis"] = normalize_text("thesis", infographic.get("thesis", ""), 24)
     infographic["why_it_matters"] = [
-        normalize_text(f"why_it_matters[{index + 1}]", item, 14)
+        normalize_text(f"why_it_matters[{index + 1}]", item, 11)
         for index, item in enumerate((infographic.get("why_it_matters") or [])[:3])
     ] or ["Paper changes the mechanistic interpretation of the problem"]
 
@@ -1035,18 +1041,18 @@ def normalize_infographic_claims(claims: dict[str, Any]) -> list[str]:
     infographic["core_evidence"] = [
         {
             "title": normalize_text(f"core_evidence[{index + 1}].title", card.get("title", ""), 4),
-            "claim": normalize_text(f"core_evidence[{index + 1}].claim", card.get("claim", ""), 22),
+            "claim": normalize_text(f"core_evidence[{index + 1}].claim", card.get("claim", ""), 18),
         }
         for index, card in enumerate(evidence[:4])
     ]
 
-    infographic["mechanism"] = normalize_text("mechanism", infographic.get("mechanism", ""), 35)
+    infographic["mechanism"] = normalize_text("mechanism", infographic.get("mechanism", ""), 28)
     infographic["boundary_conditions"] = [
-        normalize_text(f"boundary_conditions[{index + 1}]", item, 16)
+        normalize_text(f"boundary_conditions[{index + 1}]", item, 12)
         for index, item in enumerate((infographic.get("boundary_conditions") or [])[:3])
     ] or ["Boundary conditions require closer reading"]
     infographic["generalizable_insight"] = normalize_text(
-        "generalizable_insight", infographic.get("generalizable_insight", ""), 28
+        "generalizable_insight", infographic.get("generalizable_insight", ""), 22
     )
     return notes
 
@@ -1073,9 +1079,9 @@ def validate_claims(claims: dict[str, Any]) -> None:
         if ";" in str(text):
             errors.append(f"{label} contains a semicolon")
 
-    check_words("thesis", infographic.get("thesis", ""), 28)
+    check_words("thesis", infographic.get("thesis", ""), 24)
     for index, item in enumerate(infographic.get("why_it_matters", []), start=1):
-      check_words(f"why_it_matters[{index}]", item, 14)
+      check_words(f"why_it_matters[{index}]", item, 11)
     if len(infographic.get("why_it_matters", [])) > 3:
         errors.append("why_it_matters exceeds 3 bullets")
 
@@ -1088,14 +1094,14 @@ def validate_claims(claims: dict[str, Any]) -> None:
         errors.append("core_evidence must contain exactly 4 cards")
     for index, card in enumerate(evidence, start=1):
         check_words(f"core_evidence[{index}].title", card.get("title", ""), 4)
-        check_words(f"core_evidence[{index}].claim", card.get("claim", ""), 22)
+        check_words(f"core_evidence[{index}].claim", card.get("claim", ""), 18)
 
-    check_words("mechanism", infographic.get("mechanism", ""), 35)
+    check_words("mechanism", infographic.get("mechanism", ""), 28)
     for index, item in enumerate(infographic.get("boundary_conditions", []), start=1):
-        check_words(f"boundary_conditions[{index}]", item, 16)
+        check_words(f"boundary_conditions[{index}]", item, 12)
     if len(infographic.get("boundary_conditions", [])) > 3:
         errors.append("boundary_conditions exceeds 3 bullets")
-    check_words("generalizable_insight", infographic.get("generalizable_insight", ""), 28)
+    check_words("generalizable_insight", infographic.get("generalizable_insight", ""), 22)
 
     if errors:
         raise HTTPException(status_code=502, detail=f"Model returned non-compliant infographic_claims: {', '.join(errors)}")

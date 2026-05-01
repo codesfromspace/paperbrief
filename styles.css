@@ -736,12 +736,23 @@ h2 {
 
 .brief-card {
   max-width: 720px;
+  min-height: min(1122px, calc(100vh - 120px));
   margin: 0 auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   padding: clamp(18px, 3vw, 30px);
   box-shadow: var(--shadow);
+}
+
+.brief-card[data-density="compact"] {
+  padding: 20px;
+  font-size: 0.92rem;
+}
+
+.brief-card[data-density="dense"] {
+  padding: 16px;
+  font-size: 0.84rem;
 }
 
 .brief-card.is-editing {
@@ -784,6 +795,26 @@ h2 {
   letter-spacing: 0;
 }
 
+.brief-card[data-density="compact"] .brief-header,
+.brief-card[data-density="dense"] .brief-header {
+  padding-bottom: 10px;
+}
+
+.brief-card[data-density="compact"] .brief-header h3 {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.brief-card[data-density="dense"] .brief-header h3 {
+  font-size: 28px;
+  line-height: 1.04;
+}
+
+.brief-card[data-density="compact"] .brief-meta,
+.brief-card[data-density="dense"] .brief-meta {
+  margin: 8px 0;
+}
+
 .article-snapshot {
   margin: 18px 0;
   border: 1px solid var(--line);
@@ -821,6 +852,23 @@ h2 {
   border-radius: 8px;
   background: var(--surface-2);
   padding: 14px;
+}
+
+.brief-card[data-density="compact"] .doi-context,
+.brief-card[data-density="dense"] .doi-context,
+.brief-card[data-density="compact"] .controls-panel,
+.brief-card[data-density="dense"] .controls-panel {
+  margin: 8px 0;
+  padding: 9px;
+}
+
+.brief-card[data-density="dense"] .doi-context p,
+.brief-card[data-density="dense"] .doi-context li,
+.brief-card[data-density="dense"] .trace-item,
+.brief-card[data-density="dense"] .quality-panel li,
+.brief-card[data-density="dense"] .quality-panel p {
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .doi-context.is-hidden {
@@ -965,6 +1013,27 @@ h2 {
   padding: 16px;
 }
 
+.brief-card[data-density="compact"] .tldr {
+  padding: 12px;
+  gap: 10px;
+}
+
+.brief-card[data-density="dense"] .tldr {
+  grid-template-columns: 54px 1fr;
+  padding: 9px 10px;
+  gap: 8px;
+}
+
+.brief-card[data-density="compact"] .tldr p {
+  font-size: 14px;
+  line-height: 1.32;
+}
+
+.brief-card[data-density="dense"] .tldr p {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .controls-panel {
   display: grid;
   grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 1fr) auto;
@@ -1055,6 +1124,28 @@ h2 {
   margin-top: 22px;
 }
 
+.brief-card[data-density="compact"] .brief-grid,
+.brief-card[data-density="dense"] .brief-grid {
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.brief-card[data-density="compact"] li,
+.brief-card[data-density="dense"] li {
+  margin-bottom: 5px;
+  line-height: 1.25;
+}
+
+.brief-card[data-density="compact"] dl,
+.brief-card[data-density="dense"] dl {
+  gap: 4px;
+}
+
+.brief-card[data-density="compact"] dl div,
+.brief-card[data-density="dense"] dl div {
+  padding-bottom: 4px;
+}
+
 .brief-card h4 {
   margin-bottom: 10px;
 }
@@ -1100,6 +1191,20 @@ dd {
   margin-top: 22px;
 }
 
+.brief-card[data-density="compact"] .findings,
+.brief-card[data-density="compact"] .limitations,
+.brief-card[data-density="compact"] .claim-stack,
+.brief-card[data-density="compact"] .trace-panel,
+.brief-card[data-density="compact"] .quality-panel,
+.brief-card[data-density="dense"] .findings,
+.brief-card[data-density="dense"] .limitations,
+.brief-card[data-density="dense"] .claim-stack,
+.brief-card[data-density="dense"] .trace-panel,
+.brief-card[data-density="dense"] .quality-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
 .finding-list {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1118,6 +1223,17 @@ dd {
   text-align: left;
 }
 
+.brief-card[data-density="compact"] .finding {
+  min-height: 82px;
+  padding: 9px;
+}
+
+.brief-card[data-density="dense"] .finding {
+  min-height: 64px;
+  padding: 7px;
+  gap: 3px;
+}
+
 .finding.is-selected {
   border-color: color-mix(in srgb, var(--teal) 70%, transparent);
   background: var(--teal-2);
@@ -1132,6 +1248,22 @@ dd {
 .finding strong {
   font-size: 18px;
   line-height: 1.1;
+}
+
+.brief-card[data-density="compact"] .finding strong {
+  font-size: 15px;
+}
+
+.brief-card[data-density="dense"] .finding strong {
+  font-size: 13px;
+  line-height: 1.05;
+}
+
+.brief-card[data-density="dense"] .finding span,
+.brief-card[data-density="dense"] .finding small,
+.brief-card[data-density="dense"] dt,
+.brief-card[data-density="dense"] dd {
+  font-size: 10px;
 }
 
 .finding small {
@@ -1411,7 +1543,9 @@ input:focus-visible {
 
   .brief-card {
     max-width: none;
+    min-height: 0;
     padding: 0;
+    font-size: 9.5px;
   }
 
   .brief-header {
@@ -1420,7 +1554,7 @@ input:focus-visible {
 
   .brief-header h3 {
     max-width: 100%;
-    font-size: 26px;
+    font-size: 22px;
     line-height: 1.08;
   }
 
@@ -1438,7 +1572,7 @@ input:focus-visible {
   }
 
   .brief-meta {
-    margin: 10px 0;
+    margin: 6px 0;
   }
 
   .brief-meta span {
@@ -1448,7 +1582,7 @@ input:focus-visible {
 
   .tldr {
     grid-template-columns: 54px 1fr;
-    padding: 10px 14px;
+    padding: 7px 10px;
     background: transparent;
     color: var(--ink);
   }
@@ -1459,13 +1593,14 @@ input:focus-visible {
 
   .tldr p {
     color: var(--muted);
-    font-size: 13px;
+    font-size: 11px;
+    line-height: 1.22;
   }
 
   .brief-grid {
     grid-template-columns: 1fr 0.9fr;
-    gap: 14px;
-    margin-top: 14px;
+    gap: 10px;
+    margin-top: 8px;
   }
 
   li {
@@ -1491,8 +1626,10 @@ input:focus-visible {
 
   .findings,
   .limitations,
-  .claim-stack {
-    margin-top: 14px;
+  .claim-stack,
+  .trace-panel,
+  .quality-panel {
+    margin-top: 8px;
   }
 
   .finding-list {
@@ -1501,13 +1638,14 @@ input:focus-visible {
   }
 
   .finding {
-    min-height: 74px;
-    padding: 9px;
+    min-height: 58px;
+    padding: 6px;
     page-break-inside: avoid;
   }
 
   .finding strong {
-    font-size: 18px;
+    font-size: 12px;
+    line-height: 1.08;
   }
 
   .finding small,
@@ -1517,7 +1655,7 @@ input:focus-visible {
 
   .limitations,
   .claim-stack {
-    padding-top: 10px;
+    padding-top: 7px;
   }
 
   .limitations p,
@@ -1529,6 +1667,31 @@ input:focus-visible {
 
   .claim-stack {
     grid-template-columns: 1fr 1fr;
-    gap: 10px 18px;
+    gap: 7px 12px;
+  }
+
+  .doi-context,
+  .controls-panel,
+  .article-snapshot {
+    margin: 6px 0;
+    padding: 6px;
+  }
+
+  .controls-panel {
+    display: none;
+  }
+
+  .doi-signal-grid,
+  .finding-list {
+    gap: 5px;
+  }
+
+  .trace-item,
+  .confidence-list span,
+  .quality-panel li,
+  .quality-panel p {
+    padding: 5px;
+    font-size: 9px;
+    line-height: 1.18;
   }
 }
