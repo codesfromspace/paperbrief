@@ -775,7 +775,7 @@ h2 {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 3px solid var(--ink);
   padding-bottom: 18px;
 }
 
@@ -788,11 +788,29 @@ h2 {
 }
 
 .brief-header h3 {
-  max-width: 17ch;
+  max-width: 19ch;
   margin: 6px 0 0;
-  font-size: clamp(30px, 4.2vw, 48px);
-  line-height: 0.98;
+  font-size: clamp(28px, 3.9vw, 44px);
+  line-height: 1;
   letter-spacing: 0;
+}
+
+.paper-details {
+  max-width: 60ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.3;
+}
+
+.executive-takeaway {
+  max-width: 58ch;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .brief-card[data-density="compact"] .brief-header,
@@ -1005,12 +1023,14 @@ h2 {
 
 .tldr {
   display: grid;
-  grid-template-columns: 70px 1fr;
+  grid-template-columns: 92px 1fr;
   gap: 14px;
   border-radius: 8px;
-  background: var(--ink);
-  color: var(--surface);
-  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--line));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--teal-2) 68%, var(--surface)), var(--surface));
+  color: var(--ink);
+  padding: 18px;
+  box-shadow: inset 5px 0 0 var(--teal);
 }
 
 .brief-card[data-density="compact"] .tldr {
@@ -1107,14 +1127,37 @@ h2 {
 }
 
 .tldr span {
-  color: var(--amber);
+  color: var(--teal);
   font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .tldr p {
   margin: 0;
-  font-size: 16px;
-  line-height: 1.45;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 820;
+  line-height: 1.32;
+}
+
+.key-finding-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.key-finding-meta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .brief-grid {
@@ -1207,20 +1250,21 @@ dd {
 
 .finding-list {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .finding {
   display: grid;
-  gap: 5px;
-  min-height: 108px;
+  gap: 8px;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-2);
-  padding: 12px;
+  background: var(--surface);
+  padding: 13px;
   color: var(--ink);
   text-align: left;
+  box-shadow: inset 0 3px 0 color-mix(in srgb, var(--teal) 72%, transparent);
 }
 
 .brief-card[data-density="compact"] .finding {
@@ -1241,13 +1285,15 @@ dd {
 
 .finding span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .finding strong {
-  font-size: 18px;
-  line-height: 1.1;
+  font-size: 16px;
+  line-height: 1.18;
 }
 
 .brief-card[data-density="compact"] .finding strong {
@@ -1271,6 +1317,50 @@ dd {
   line-height: 1.3;
 }
 
+.claim-card-top,
+.claim-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.claim-card-top em {
+  border-radius: 999px;
+  background: var(--teal-2);
+  color: var(--teal-ink);
+  padding: 4px 7px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.claim-card-meta small {
+  display: inline-block;
+  border-radius: 999px;
+  background: var(--surface-2);
+  padding: 4px 7px;
+  font-size: 10px;
+}
+
+.claim-card-bottom {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.claim-card-bottom p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.32;
+}
+
+.claim-card-bottom b {
+  color: var(--ink);
+}
+
 .limitations,
 .claim-stack {
   border-top: 1px solid var(--line);
@@ -1292,6 +1382,42 @@ dd {
 
 .claim-stack ul {
   color: var(--ink);
+}
+
+.so-what-panel {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.so-what-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.so-what-grid div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 11px;
+}
+
+.so-what-grid span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--coral);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.so-what-grid p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .export-row {
@@ -1479,6 +1605,7 @@ input:focus-visible {
   .finding-list,
   .evidence-list,
   .claim-stack,
+  .so-what-grid,
   .controls-panel,
   .doi-signal-grid,
   .synthesis-grid {
@@ -1627,13 +1754,14 @@ input:focus-visible {
   .findings,
   .limitations,
   .claim-stack,
+  .so-what-panel,
   .trace-panel,
   .quality-panel {
     margin-top: 8px;
   }
 
   .finding-list {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
   }
 
@@ -1668,6 +1796,21 @@ input:focus-visible {
   .claim-stack {
     grid-template-columns: 1fr 1fr;
     gap: 7px 12px;
+  }
+
+  .so-what-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+  }
+
+  .so-what-grid div {
+    padding: 6px;
+  }
+
+  .so-what-grid p,
+  .claim-card-bottom p {
+    font-size: 9px;
+    line-height: 1.18;
   }
 
   .doi-context,
