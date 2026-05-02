@@ -179,9 +179,14 @@ svg {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 330px) minmax(430px, 1fr) minmax(280px, 340px);
+  grid-template-columns: minmax(280px, 330px) minmax(430px, var(--result-stage-width, 1fr));
   gap: 18px;
   align-items: start;
+}
+
+.workspace.is-resizing-output {
+  user-select: none;
+  cursor: ew-resize;
 }
 
 .panel,
@@ -594,7 +599,41 @@ h2 {
 }
 
 .result-stage {
+  position: relative;
   padding: 18px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.stage-resize-handle {
+  position: absolute;
+  top: 10px;
+  right: -11px;
+  bottom: 10px;
+  z-index: 5;
+  width: 18px;
+  cursor: ew-resize;
+}
+
+.stage-resize-handle::before {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 4px;
+  height: 54px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--teal) 36%, transparent);
+  content: "";
+  opacity: 0.42;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+.stage-resize-handle:hover::before,
+.stage-resize-handle:focus-visible::before,
+.workspace.is-resizing-output .stage-resize-handle::before {
+  background: var(--teal);
+  opacity: 0.95;
 }
 
 .stage-toolbar {
@@ -1672,6 +1711,10 @@ input:focus-visible {
   .doi-signal-grid,
   .synthesis-grid {
     grid-template-columns: 1fr;
+  }
+
+  .stage-resize-handle {
+    display: none;
   }
 
   .brief-header h3 {

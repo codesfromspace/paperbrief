@@ -39,6 +39,9 @@ const paperTabs = document.querySelector("#paperTabs");
 const synthesisPanel = document.querySelector("#synthesisPanel");
 const comparisonPanel = document.querySelector("#comparisonPanel");
 const exportStatus = document.querySelector("#exportStatus");
+const workspace = document.querySelector(".workspace");
+const resultStage = document.querySelector(".result-stage");
+const stageResizeHandle = document.querySelector("#stageResizeHandle");
 let latestPayload = null;
 let latestBatch = null;
 let currentView = "short";
@@ -48,7 +51,80 @@ let editBackup = null;
 const PROFILE_STORAGE_KEY = "paperbrief.profiles.v1";
 const ACTIVE_PROFILE_KEY = "paperbrief.activeProfile.v1";
 const THEME_STORAGE_KEY = "paperbrief.theme.v1";
+const OUTPUT_WIDTH_STORAGE_KEY = "paperbrief.outputWidth.v1";
 const DEFAULT_MODELS = ["gpt-5.2", "gpt-5.1", "gpt-5", "gpt-4.1", "gpt-4.1-mini", "o4-mini"];
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getOutputWidthBounds() {
+  const workspaceRect = workspace.getBoundingClientRect();
+  const resultRect = resultStage.getBoundingClientRect();
+  const min = 430;
+  const max = Math.max(min, workspaceRect.right - resultRect.left);
+  return { min, max };
+}
+
+function setOutputWidth(width, persist = true) {
+  const { min, max } = getOutputWidthBounds();
+  const clamped = clampNumber(Math.round(width), min, max);
+  workspace.style.setProperty("--result-stage-width", `${clamped}px`);
+  if (persist) localStorage.setItem(OUTPUT_WIDTH_STORAGE_KEY, String(clamped));
+}
+
+function resetOutputWidth() {
+  workspace.style.removeProperty("--result-stage-width");
+  localStorage.removeItem(OUTPUT_WIDTH_STORAGE_KEY);
+  showToast("Output panel width reset.");
+}
+
+function initOutputResize() {
+  const savedWidth = Number(localStorage.getItem(OUTPUT_WIDTH_STORAGE_KEY));
+  if (Number.isFinite(savedWidth) && savedWidth > 0) {
+    window.requestAnimationFrame(() => setOutputWidth(savedWidth, false));
+  }
+
+  let resizing = false;
+  function stopResize() {
+    if (!resizing) return;
+    resizing = false;
+    workspace.classList.remove("is-resizing-output");
+  }
+
+  stageResizeHandle.addEventListener("pointerdown", (event) => {
+    resizing = true;
+    stageResizeHandle.setPointerCapture(event.pointerId);
+    workspace.classList.add("is-resizing-output");
+    event.preventDefault();
+  });
+
+  stageResizeHandle.addEventListener("pointermove", (event) => {
+    if (!resizing) return;
+    const resultRect = resultStage.getBoundingClientRect();
+    setOutputWidth(event.clientX - resultRect.left);
+  });
+
+  stageResizeHandle.addEventListener("pointerup", stopResize);
+  stageResizeHandle.addEventListener("pointercancel", stopResize);
+  stageResizeHandle.addEventListener("dblclick", resetOutputWidth);
+  stageResizeHandle.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const currentWidth = resultStage.getBoundingClientRect().width;
+      setOutputWidth(currentWidth + (event.key === "ArrowRight" ? 40 : -40));
+      event.preventDefault();
+    }
+    if (event.key === "Escape" || event.key === "Enter") {
+      resetOutputWidth();
+      event.preventDefault();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    const saved = Number(localStorage.getItem(OUTPUT_WIDTH_STORAGE_KEY));
+    if (Number.isFinite(saved) && saved > 0) setOutputWidth(saved, false);
+  });
+}
 
 function getCurrentTheme() {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -1045,6 +1121,7 @@ document.querySelector("#printButton").addEventListener("click", () => {
   }
   window.print();
 });
+initOutputResize();
 applyTheme(getCurrentTheme());
 renderProfiles();
 updateBatchModeVisibility();
