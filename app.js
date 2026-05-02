@@ -25,6 +25,7 @@ const renderStep = document.querySelector("#renderStep");
 const generateButton = document.querySelector("#generateButton");
 const toast = document.querySelector("#toast");
 const shortViewButton = document.querySelector("#shortViewButton");
+const condensedViewButton = document.querySelector("#condensedViewButton");
 const fullViewButton = document.querySelector("#fullViewButton");
 const editButton = document.querySelector("#editButton");
 const snapshotButton = document.querySelector("#snapshotButton");
@@ -395,9 +396,9 @@ function compactCardText(value, limit = 180) {
   return `${text.slice(0, limit - 1).trim()}...`;
 }
 
-function compactList(items, fallback, limit = 3) {
+function compactList(items, fallback, limit = 3, textLimit = 130) {
   const list = (Array.isArray(items) ? items : [items])
-    .map((item) => compactCardText(item, 130))
+    .map((item) => compactCardText(item, textLimit))
     .filter(Boolean);
   return (list.length ? list : [fallback]).slice(0, limit);
 }
@@ -436,6 +437,7 @@ function inferClaimImplication(claim, claims) {
 
 function buildDisplayModel(payload, view) {
   const claims = normalizeClaims(payload, view);
+  const isCondensed = view === "condensed";
   const metadata = payload.metadata || {};
   const confidence = payload.claims.claim_confidence || {};
   const quality = payload.claims.quality_check || {};
@@ -462,18 +464,21 @@ function buildDisplayModel(payload, view) {
       relevance,
       confidence: keyConfidence,
     },
-    claims: (claims.core_evidence || []).slice(0, 4).map((card, index) => {
+    claims: (claims.core_evidence || []).slice(0, isCondensed ? 3 : 4).map((card, index) => {
       const trace = getTraceForClaim(payload, index + 1);
       return {
         id: index + 1,
         title: card.title || `Claim ${index + 1}`,
-        summary: card.claim || "Claim not returned.",
+        summary: compactCardText(card.claim || "Claim not returned.", isCondensed ? 105 : 180),
         pages: trace.pages || [],
-        evidenceBasis: compactCardText(trace.support || "Evidence basis not returned."),
-        implication: inferClaimImplication(card.claim, claims),
+        evidenceBasis: compactCardText(trace.support || "Evidence basis not returned.", isCondensed ? 85 : 180),
+        implication: compactCardText(inferClaimImplication(card.claim, claims), isCondensed ? 85 : 180),
         strength: displayConfidence(confidence.core_evidence?.[index]),
-        limitations: (claims.boundary_conditions || [])[index % Math.max((claims.boundary_conditions || []).length, 1)]
-          || "Uncertainty requires closer reading.",
+        limitations: compactCardText(
+          (claims.boundary_conditions || [])[index % Math.max((claims.boundary_conditions || []).length, 1)]
+            || "Uncertainty requires closer reading.",
+          isCondensed ? 85 : 180
+        ),
       };
     }),
     soWhat: {
@@ -482,16 +487,17 @@ function buildDisplayModel(payload, view) {
       doNotOverinterpret: (claims.boundary_conditions || [])[0] || quality.issues?.[0] || "Do not generalize beyond the study design.",
     },
     readerBrief: {
-      whyImportant: compactList(claims.why_it_matters, "Why this matters was not returned.", 3),
-      whatFound: compactList((claims.core_evidence || []).map((card) => card.claim), claims.thesis, 4),
-      interesting: buildInterestingPoints(claims, metadata),
+      whyImportant: compactList(claims.why_it_matters, "Why this matters was not returned.", isCondensed ? 2 : 3, isCondensed ? 95 : 130),
+      whatFound: compactList((claims.core_evidence || []).map((card) => card.claim), claims.thesis, isCondensed ? 3 : 4, isCondensed ? 95 : 130),
+      interesting: compactList(buildInterestingPoints(claims, metadata), "The most interesting angle will appear after claim extraction.", isCondensed ? 2 : 3, isCondensed ? 95 : 130),
       weaknesses: compactList(
         [
           ...(claims.boundary_conditions || []),
           ...(quality.issues || []),
         ],
         "Limitations were not returned by the model.",
-        3
+        isCondensed ? 2 : 3,
+        isCondensed ? 95 : 130
       ),
     },
     rawClaims: claims,
@@ -504,6 +510,7 @@ function renderClaims(payload, view = currentView) {
   const display = buildDisplayModel(payload, view);
   const claims = display.rawClaims;
   const metadata = payload.metadata || {};
+  document.querySelector("#briefCard").dataset.view = view;
 
   document.querySelector("#sourceLabel").textContent = "OpenAI Responses API";
   if (metadata.journal && metadata.journal !== "not found") {
@@ -519,7 +526,9 @@ function renderClaims(payload, view = currentView) {
   document.querySelector("#charsMeta").textContent = `${Number(metadata.char_count || 0).toLocaleString()} chars`;
   document.querySelector("#executiveTakeaway").textContent = display.executiveTakeaway;
   const notes = payload.claims._normalization_notes || [];
-  document.querySelector("#normalizationMeta").textContent = notes.length ? `${notes.length} fields compressed` : "No compression";
+  document.querySelector("#normalizationMeta").textContent = view === "condensed"
+    ? "Condensed to A4"
+    : notes.length ? `${notes.length} fields compressed` : "No compression";
   renderJournalMetric(metadata);
   renderDoiContext(metadata);
   renderSnapshot(payload);
@@ -589,6 +598,11 @@ function fitBriefToA4() {
   window.requestAnimationFrame(() => {
     const card = document.querySelector("#briefCard");
     card.dataset.density = "normal";
+    if (currentView === "condensed") {
+      card.dataset.density = "dense";
+      statusPill.textContent = card.scrollHeight > 1122 ? "Condensed overflow" : "Condensed A4";
+      return;
+    }
     const a4HeightPx = 1122;
     if (card.scrollHeight > a4HeightPx) {
       card.dataset.density = "compact";
@@ -770,6 +784,7 @@ function setView(view) {
     saveCurrentEdits();
   }
   shortViewButton.classList.toggle("is-selected", view === "short");
+  condensedViewButton.classList.toggle("is-selected", view === "condensed");
   fullViewButton.classList.toggle("is-selected", view === "full");
   renderClaims(latestPayload, view);
 }
@@ -779,6 +794,7 @@ function updateEditControls() {
   saveEditButton.classList.toggle("is-hidden", !isEditMode);
   cancelEditButton.classList.toggle("is-hidden", !isEditMode);
   shortViewButton.disabled = isEditMode;
+  condensedViewButton.disabled = isEditMode;
   fullViewButton.disabled = isEditMode;
 }
 
@@ -1039,6 +1055,7 @@ profileSelect.addEventListener("change", () => {
 saveProfileButton.addEventListener("click", saveCurrentProfile);
 deleteProfileButton.addEventListener("click", deleteSelectedProfile);
 shortViewButton.addEventListener("click", () => setView("short"));
+condensedViewButton.addEventListener("click", () => setView("condensed"));
 fullViewButton.addEventListener("click", () => setView("full"));
 snapshotButton.addEventListener("click", () => {
   if (!latestPayload?.snapshot?.data_url) return;

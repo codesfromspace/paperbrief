@@ -1273,6 +1273,102 @@ h2 {
   line-height: 1.2;
 }
 
+.brief-card[data-view="condensed"] .doi-context,
+.brief-card[data-view="condensed"] .article-snapshot,
+.brief-card[data-view="condensed"] .controls-panel,
+.brief-card[data-view="condensed"] .trace-panel,
+.brief-card[data-view="condensed"] .quality-panel,
+.brief-card[data-view="condensed"] .limitations,
+.brief-card[data-view="condensed"] .claim-stack {
+  display: none;
+}
+
+.brief-card[data-view="condensed"] .brief-header {
+  padding-bottom: 10px;
+}
+
+.brief-card[data-view="condensed"] .brief-header h3 {
+  max-width: 100%;
+  font-size: clamp(23px, 3.1vw, 34px);
+  line-height: 1.02;
+}
+
+.brief-card[data-view="condensed"] .paper-details,
+.brief-card[data-view="condensed"] .executive-takeaway {
+  max-width: 80ch;
+  font-size: 11px;
+  line-height: 1.24;
+}
+
+.brief-card[data-view="condensed"] .tldr {
+  grid-template-columns: 74px 1fr;
+  margin-top: 10px;
+  padding: 11px;
+}
+
+.brief-card[data-view="condensed"] .tldr p {
+  font-size: 14px;
+  line-height: 1.22;
+}
+
+.brief-card[data-view="condensed"] .reader-brief {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.brief-card[data-view="condensed"] .reader-card {
+  padding: 9px;
+}
+
+.brief-card[data-view="condensed"] .reader-card span {
+  margin-bottom: 5px;
+  font-size: 9px;
+}
+
+.brief-card[data-view="condensed"] .reader-card li {
+  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 1.18;
+}
+
+.brief-card[data-view="condensed"] .brief-grid,
+.brief-card[data-view="condensed"] .findings,
+.brief-card[data-view="condensed"] .so-what-panel {
+  margin-top: 10px;
+}
+
+.brief-card[data-view="condensed"] .finding-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.brief-card[data-view="condensed"] .finding {
+  gap: 5px;
+  padding: 8px;
+}
+
+.brief-card[data-view="condensed"] .finding strong {
+  font-size: 12px;
+  line-height: 1.12;
+}
+
+.brief-card[data-view="condensed"] .claim-card-bottom p,
+.brief-card[data-view="condensed"] .claim-card-meta small,
+.brief-card[data-view="condensed"] .so-what-grid p,
+.brief-card[data-view="condensed"] dt,
+.brief-card[data-view="condensed"] dd {
+  font-size: 9px;
+  line-height: 1.16;
+}
+
+.brief-card[data-view="condensed"] .so-what-grid {
+  gap: 6px;
+}
+
+.brief-card[data-view="condensed"] .so-what-grid div {
+  padding: 7px;
+}
+
 .brief-card[data-density="compact"] li,
 .brief-card[data-density="dense"] li {
   margin-bottom: 5px;
