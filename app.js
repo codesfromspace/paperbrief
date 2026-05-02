@@ -319,6 +319,26 @@ function compactCardText(value, limit = 180) {
   return `${text.slice(0, limit - 1).trim()}...`;
 }
 
+function compactList(items, fallback, limit = 3) {
+  const list = (Array.isArray(items) ? items : [items])
+    .map((item) => compactCardText(item, 130))
+    .filter(Boolean);
+  return (list.length ? list : [fallback]).slice(0, limit);
+}
+
+function buildInterestingPoints(claims, metadata) {
+  const doiHooks = metadata.article_signals?.reuse_hooks || [];
+  return compactList(
+    [
+      claims.mechanism,
+      claims.generalizable_insight,
+      ...doiHooks,
+    ],
+    "The most interesting angle will appear after claim extraction.",
+    3
+  );
+}
+
 function inferRelevance(metadata, claims) {
   const score = Number(metadata.journal_metric?.interest_score || 0);
   const clinicalText = [
@@ -385,6 +405,19 @@ function buildDisplayModel(payload, view) {
       rememberThis: claims.generalizable_insight || claims.thesis || "Remember the paper-specific mechanism, not only the topic.",
       doNotOverinterpret: (claims.boundary_conditions || [])[0] || quality.issues?.[0] || "Do not generalize beyond the study design.",
     },
+    readerBrief: {
+      whyImportant: compactList(claims.why_it_matters, "Why this matters was not returned.", 3),
+      whatFound: compactList((claims.core_evidence || []).map((card) => card.claim), claims.thesis, 4),
+      interesting: buildInterestingPoints(claims, metadata),
+      weaknesses: compactList(
+        [
+          ...(claims.boundary_conditions || []),
+          ...(quality.issues || []),
+        ],
+        "Limitations were not returned by the model.",
+        3
+      ),
+    },
     rawClaims: claims,
   };
 }
@@ -422,7 +455,10 @@ function renderClaims(payload, view = currentView) {
   document.querySelector("#keyFindingPages").textContent = pageLabel(display.keyFinding.pages);
   document.querySelector("#keyFindingRelevance").textContent = `Relevance ${display.keyFinding.relevance}`;
   document.querySelector("#keyFindingConfidence").textContent = `Evidence ${display.keyFinding.confidence}`;
-  document.querySelector("#whyList").innerHTML = editableList(claims.why_it_matters, "why_it_matters");
+  document.querySelector("#whyList").innerHTML = editableList(display.readerBrief.whyImportant, "why_it_matters");
+  document.querySelector("#foundList").innerHTML = asList(display.readerBrief.whatFound);
+  document.querySelector("#interestingList").innerHTML = asList(display.readerBrief.interesting);
+  document.querySelector("#weaknessList").innerHTML = asList(display.readerBrief.weaknesses);
   document.querySelector("#modelSystem").textContent = claims.study_design.model_system;
   document.querySelector("#modelSystem").dataset.editField = "study_design.model_system";
   document.querySelector("#methods").textContent = claims.study_design.methods;
